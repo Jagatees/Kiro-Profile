@@ -1,0 +1,9 @@
+.git/**
+.gitignore
+.vscode/**
+node_modules/**
+kiro-profile-shares/**
+src/**
+*.vsix
+tsconfig.json
+package-lock.json

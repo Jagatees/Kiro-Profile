@@ -1,0 +1,107 @@
+{
+  "name": "kiro-activity-insights",
+  "displayName": "Kiro Activity Insights",
+  "description": "A private, local activity profile for Kiro IDE.",
+  "version": "0.2.7",
+  "publisher": "jagatees",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jagatees/kiro-profile.git"
+  },
+  "engines": {
+    "vscode": "^1.92.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "onView:kiroActivityInsights.profile",
+    "onCommand:kiroActivityInsights.openProfile",
+    "onCommand:kiroActivityInsights.refresh"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "kiroActivityInsights.openProfile",
+        "title": "Kiro Profile: Open Activity Insights",
+        "category": "Kiro Profile",
+        "icon": "$(account)"
+      },
+      {
+        "command": "kiroActivityInsights.refresh",
+        "title": "Kiro Profile: Refresh Activity Insights",
+        "category": "Kiro Profile",
+        "icon": "$(refresh)"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "kiroActivityInsights",
+          "title": "Kiro Profile",
+          "icon": "resources/activity.svg"
+        }
+      ]
+    },
+    "views": {
+      "kiroActivityInsights": [
+        {
+          "id": "kiroActivityInsights.profile",
+          "name": "Profile",
+          "type": "webview"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Kiro Activity Insights",
+      "properties": {
+        "kiroActivityInsights.displayName": {
+          "type": "string",
+          "default": "Kiro Developer",
+          "description": "Display name shown on the profile card."
+        },
+        "kiroActivityInsights.username": {
+          "type": "string",
+          "default": "kiro-builder",
+          "description": "Username shown on the profile card."
+        },
+        "kiroActivityInsights.planLabel": {
+          "type": "string",
+          "default": "Local",
+          "description": "Small account label shown beside the username."
+        }
+      }
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "kiroActivityInsights.refresh",
+          "when": "view == kiroActivityInsights.profile",
+          "group": "navigation"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "kiroActivityInsights.openProfile"
+        },
+        {
+          "command": "kiroActivityInsights.refresh"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "check": "tsc --noEmit -p ./",
+    "package": "vsce package --allow-missing-repository"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.1",
+    "@types/vscode": "^1.92.0",
+    "@vscode/vsce": "^3.2.1",
+    "typescript": "^5.7.2"
+  }
+}
