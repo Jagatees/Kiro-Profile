@@ -11,7 +11,7 @@ type LeaderboardEntry = {
   submittedAt: string;
 };
 
-const extensionDownloadUrl = "/downloads/kiro-activity-insights-0.2.11.vsix";
+const extensionDownloadUrl = "/downloads/kiro-stat-0.2.11.vsix";
 
 function compactNumber(value: number): string {
   return new Intl.NumberFormat("en", {
@@ -47,10 +47,10 @@ export default function Home() {
     <main className="page-shell">
       <section className="hero">
         <div className="hero-copy">
-          <p className="eyebrow">Kiro Activity Insights</p>
-          <h1>Kiro World Leaderboard</h1>
+          <p className="eyebrow">Kiro Stat</p>
+          <h1>Kiro Stat Leaderboard</h1>
           <p className="lede">
-            Install the Kiro Activity Insights extension, turn on Public in Kiro, and publish your latest profile snapshot to the world ranking.
+            Install the Kiro Stat extension, turn on Public in Kiro, and publish your latest profile snapshot to the world ranking.
           </p>
           <div className="hero-actions">
             <a className="primary-link" href={extensionDownloadUrl} download>
@@ -82,14 +82,14 @@ export default function Home() {
           </div>
 
           <a className="download-card" href={extensionDownloadUrl} download>
-            <strong>Kiro Activity Insights</strong>
+            <strong>Kiro Stat</strong>
             <span>Version 0.2.11 · VSIX installer</span>
           </a>
 
           <div className="sync-steps">
             <div><strong>1</strong><span>Open Kiro Command Palette</span></div>
             <div><strong>2</strong><span>Run Extensions: Install from VSIX...</span></div>
-            <div><strong>3</strong><span>Open Kiro Profile and switch Public on</span></div>
+            <div><strong>3</strong><span>Open Kiro Stat and switch Public on</span></div>
           </div>
 
           <p className="sync-note">

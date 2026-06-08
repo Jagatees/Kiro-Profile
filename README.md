@@ -1,7 +1,7 @@
-# Kiro Activity Insights
+# Kiro Stat
 
 <div align="center">
-  <img src="resources/icon.png" alt="Kiro Activity Insights" width="128" height="128">
+  <img src="resources/icon.png" alt="Kiro Stat" width="128" height="128">
 </div>
 
 A Kiro IDE profile panel that shows local activity stats, optional public leaderboard sharing, and a clean share card.
@@ -64,14 +64,14 @@ Configure your profile display through VS Code settings:
 
 Download the latest public VSIX:
 
-[kiro-activity-insights-0.2.11.vsix](https://kiro-profile-leaderboard-brown.vercel.app/downloads/kiro-activity-insights-0.2.11.vsix)
+[kiro-stat-0.2.11.vsix](https://kiro-profile-leaderboard-brown.vercel.app/downloads/kiro-stat-0.2.11.vsix)
 
 Then install it in Kiro:
 
 1. Open Command Palette (`Cmd+Shift+P` on macOS, `Ctrl+Shift+P` on Windows/Linux)
 2. Run **Extensions: Install from VSIX...**
 3. Select the downloaded `.vsix`
-4. Open **Kiro Profile** from the activity bar
+4. Open **Kiro Stat** from the activity bar
 
 ### Kiro Extension Marketplace
 
@@ -84,7 +84,7 @@ The hosted VSIX lets users install without visiting GitHub. To make the extensio
    - Open Command Palette (Ctrl+Shift+P / Cmd+Shift+P)
    - Run "Extensions: Install from VSIX..."
    - Select the downloaded `.vsix` file
-3. Open **Kiro Profile** from the activity bar (sidebar icon)
+3. Open **Kiro Stat** from the activity bar (sidebar icon)
 
 ### Build from Source
 
@@ -105,29 +105,29 @@ This generates a `.vsix` file you can install in Kiro.
 
 ### Opening the Profile Panel
 
-**Method 1**: Click the **Kiro Profile** icon in the activity bar (left sidebar)
+**Method 1**: Click the **Kiro Stat** icon in the activity bar (left sidebar)
 
 **Method 2**: Use Command Palette
 - Press `Ctrl+Shift+P` (Windows/Linux) or `Cmd+Shift+P` (Mac)
-- Run "Kiro Profile: Open Activity Insights"
+- Run "Kiro Stat: Open Stats"
 
 ### Refreshing Data
 
-Click the refresh button in the panel header or run "Kiro Profile: Refresh Activity Insights" from the Command Palette.
+Click the refresh button in the panel header or run "Kiro Stat: Refresh Stats" from the Command Palette.
 
 ### Customizing Your Profile
 
 1. Open Settings (File > Preferences > Settings)
-2. Search for "Kiro Activity Insights"
+2. Search for "Kiro Stat"
 3. Configure:
-   - `kiroActivityInsights.displayName` - Your display name
-   - `kiroActivityInsights.username` - Your username/handle
-   - `kiroActivityInsights.planLabel` - Badge label (e.g., "Local", "Pro")
-   - `kiroActivityInsights.leaderboardUrl` - Public leaderboard site URL
+   - `kiroStat.displayName` - Your display name
+   - `kiroStat.username` - Your username/handle
+   - `kiroStat.planLabel` - Badge label (e.g., "Local", "Pro")
+   - `kiroStat.leaderboardUrl` - Public leaderboard site URL
 
 ### Publishing to the Leaderboard
 
-1. Open the Kiro Profile panel
+1. Open the Kiro Stat panel
 2. Toggle **Private** to **Public**
 3. The extension syncs your current profile snapshot to the configured leaderboard
 4. Toggle back to **Private** to remove your public entry
@@ -195,7 +195,7 @@ The extension collects activity data from multiple local sources:
 ### Project Structure
 
 ```
-kiro-activity-insights/
+kiro-stat/
 ├── src/
 │   └── extension.ts       # Main extension logic
 ├── resources/
@@ -282,7 +282,7 @@ Contributions are welcome! Areas for improvement:
 
 **Leaderboard does not update**
 - Confirm the profile toggle is set to Public
-- Check `kiroActivityInsights.leaderboardUrl`
+- Check `kiroStat.leaderboardUrl`
 - Click refresh to force the profile view to collect the latest local data
 
 **Share card not saving**

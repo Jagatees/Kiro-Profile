@@ -1,7 +1,7 @@
 {
-  "name": "kiro-activity-insights",
-  "displayName": "Kiro Activity Insights",
-  "description": "A private, local activity profile for Kiro IDE.",
+  "name": "kiro-stat",
+  "displayName": "Kiro Stat",
+  "description": "Local Kiro stats for tokens, sessions, models, activity, and optional public leaderboard sharing.",
   "version": "0.2.11",
   "publisher": "jagatees",
   "license": "MIT",
@@ -18,62 +18,62 @@
   ],
   "main": "./out/extension.js",
   "activationEvents": [
-    "onView:kiroActivityInsights.profile",
-    "onCommand:kiroActivityInsights.openProfile",
-    "onCommand:kiroActivityInsights.refresh"
+    "onView:kiroStat.profile",
+    "onCommand:kiroStat.openProfile",
+    "onCommand:kiroStat.refresh"
   ],
   "contributes": {
     "commands": [
       {
-        "command": "kiroActivityInsights.openProfile",
-        "title": "Kiro Profile: Open Activity Insights",
-        "category": "Kiro Profile",
+        "command": "kiroStat.openProfile",
+        "title": "Kiro Stat: Open Stats",
+        "category": "Kiro Stat",
         "icon": "$(account)"
       },
       {
-        "command": "kiroActivityInsights.refresh",
-        "title": "Kiro Profile: Refresh Activity Insights",
-        "category": "Kiro Profile",
+        "command": "kiroStat.refresh",
+        "title": "Kiro Stat: Refresh Stats",
+        "category": "Kiro Stat",
         "icon": "$(refresh)"
       }
     ],
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "kiroActivityInsights",
-          "title": "Kiro Profile",
+          "id": "kiroStat",
+          "title": "Kiro Stat",
           "icon": "resources/activity.svg"
         }
       ]
     },
     "views": {
-      "kiroActivityInsights": [
+      "kiroStat": [
         {
-          "id": "kiroActivityInsights.profile",
+          "id": "kiroStat.profile",
           "name": "Profile",
           "type": "webview"
         }
       ]
     },
     "configuration": {
-      "title": "Kiro Activity Insights",
+      "title": "Kiro Stat",
       "properties": {
-        "kiroActivityInsights.displayName": {
+        "kiroStat.displayName": {
           "type": "string",
           "default": "Kiro Developer",
           "description": "Fallback display name shown when Kiro does not expose a local account display name."
         },
-        "kiroActivityInsights.username": {
+        "kiroStat.username": {
           "type": "string",
           "default": "kiro-builder",
           "description": "Fallback handle used when no local Kiro account label is available."
         },
-        "kiroActivityInsights.planLabel": {
+        "kiroStat.planLabel": {
           "type": "string",
           "default": "Local",
           "description": "Small account label shown beside the username."
         },
-        "kiroActivityInsights.leaderboardUrl": {
+        "kiroStat.leaderboardUrl": {
           "type": "string",
           "default": "https://kiro-profile-leaderboard-brown.vercel.app",
           "description": "Leaderboard website URL opened by the Submit Profile button."
@@ -83,17 +83,17 @@
     "menus": {
       "view/title": [
         {
-          "command": "kiroActivityInsights.refresh",
-          "when": "view == kiroActivityInsights.profile",
+          "command": "kiroStat.refresh",
+          "when": "view == kiroStat.profile",
           "group": "navigation"
         }
       ],
       "commandPalette": [
         {
-          "command": "kiroActivityInsights.openProfile"
+          "command": "kiroStat.openProfile"
         },
         {
-          "command": "kiroActivityInsights.refresh"
+          "command": "kiroStat.refresh"
         }
       ]
     }

@@ -86,16 +86,16 @@ The extension now reads from:
 Install the new version:
 ```powershell
 # Remove old version first if needed
-code --uninstall-extension jagatees.kiro-activity-insights
+code --uninstall-extension jagatees.kiro-stat
 
 # Install new version
-code --install-extension kiro-activity-insights-0.2.0.vsix
+code --install-extension kiro-stat-0.2.0.vsix
 ```
 
 Or just install directly in Kiro IDE:
 1. Extensions view (Ctrl+Shift+X)
 2. ... menu → Install from VSIX
-3. Select `kiro-activity-insights-0.2.0.vsix`
+3. Select `kiro-stat-0.2.0.vsix`
 
 ## Privacy
 
@@ -110,7 +110,7 @@ The profile now shows:
 - **Original sections**: Basic stats, heatmap, languages, models
 - **+ Session Statistics**: Turn counts, success rates, durations
 - **+ Token Breakdown**: Detailed token usage analysis  
-- **+ Activity Patterns**: Time-based activity insights
+- **+ Activity Patterns**: Time-based stats
 - **+ Top Tools**: Most frequently used Kiro tools
 - **+ System Stats**: Configuration and health metrics
 

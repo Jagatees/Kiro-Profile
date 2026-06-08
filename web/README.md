@@ -1,6 +1,6 @@
-# Kiro Profile Leaderboard
+# Kiro Stat Leaderboard
 
-Small Vercel app for public Kiro Activity Insights submissions. The page is read-only for users; profiles are published by the extension when the user turns on Public.
+Small Vercel app for public Kiro Stat submissions. The page is read-only for users; profiles are published by the extension when the user turns on Public.
 
 ## Local Dev
 
@@ -21,6 +21,6 @@ BLOB_READ_WRITE_TOKEN=...
 
 You can copy `.env.example` to `.env.local` for local Blob testing.
 
-The extension setting `kiroActivityInsights.leaderboardUrl` should point to the deployed Vercel URL.
+The extension setting `kiroStat.leaderboardUrl` should point to the deployed Vercel URL.
 
 The extension sends a profile snapshot when Public is first enabled, then updates the same public row only when the snapshot changes or when the last sync is more than 24 hours old.

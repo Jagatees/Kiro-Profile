@@ -146,10 +146,10 @@ export function activate(context: vscode.ExtensionContext) {
         retainContextWhenHidden: true
       }
     }),
-    vscode.commands.registerCommand("kiroActivityInsights.openProfile", async () => {
-      await vscode.commands.executeCommand("workbench.view.extension.kiroActivityInsights");
+    vscode.commands.registerCommand("kiroStat.openProfile", async () => {
+      await vscode.commands.executeCommand("workbench.view.extension.kiroStat");
     }),
-    vscode.commands.registerCommand("kiroActivityInsights.refresh", async () => {
+    vscode.commands.registerCommand("kiroStat.refresh", async () => {
       await provider.refresh();
     })
   );
@@ -158,7 +158,7 @@ export function activate(context: vscode.ExtensionContext) {
 export function deactivate() {}
 
 class ProfileViewProvider implements vscode.WebviewViewProvider {
-  static readonly viewType = "kiroActivityInsights.profile";
+  static readonly viewType = "kiroStat.profile";
 
   private view?: vscode.WebviewView;
   private didRender = false;
@@ -209,7 +209,7 @@ class ProfileViewProvider implements vscode.WebviewViewProvider {
 
   private async saveShareCard(payload: ShareCardPayload) {
     if (!payload?.dataUrl?.startsWith("data:image/png;base64,")) {
-      void vscode.window.showWarningMessage("Kiro Profile could not create the share card image.");
+      void vscode.window.showWarningMessage("Kiro Stat could not create the share card image.");
       return;
     }
 
@@ -233,7 +233,7 @@ class ProfileViewProvider implements vscode.WebviewViewProvider {
 
   private async openLeaderboard(rawUrl: unknown) {
     if (typeof rawUrl !== "string") {
-      void vscode.window.showWarningMessage("Kiro Profile could not open the leaderboard URL.");
+      void vscode.window.showWarningMessage("Kiro Stat could not open the leaderboard URL.");
       return;
     }
 
@@ -241,12 +241,12 @@ class ProfileViewProvider implements vscode.WebviewViewProvider {
     try {
       parsed = new URL(rawUrl);
     } catch {
-      void vscode.window.showWarningMessage("Kiro Profile leaderboard URL is not valid.");
+      void vscode.window.showWarningMessage("Kiro Stat leaderboard URL is not valid.");
       return;
     }
 
     if (!["http:", "https:"].includes(parsed.protocol)) {
-      void vscode.window.showWarningMessage("Kiro Profile leaderboard URL must start with http or https.");
+      void vscode.window.showWarningMessage("Kiro Stat leaderboard URL must start with http or https.");
       return;
     }
 
@@ -300,11 +300,11 @@ class ProfileViewProvider implements vscode.WebviewViewProvider {
       await this.context.globalState.update("leaderboardLastSyncedAt", Date.now());
 
       if (!options.silent) {
-        void vscode.window.showInformationMessage("Kiro Profile is public and synced to the leaderboard.");
+        void vscode.window.showInformationMessage("Kiro Stat is public and synced to the leaderboard.");
       }
     } catch (error) {
       if (!options.silent) {
-        void vscode.window.showWarningMessage(`Kiro Profile could not sync to the leaderboard: ${String(error)}`);
+        void vscode.window.showWarningMessage(`Kiro Stat could not sync to the leaderboard: ${String(error)}`);
       }
     }
   }
@@ -330,11 +330,11 @@ class ProfileViewProvider implements vscode.WebviewViewProvider {
       await this.context.globalState.update("leaderboardLastSyncedAt", undefined);
 
       if (!options.silent) {
-        void vscode.window.showInformationMessage("Kiro Profile is private and removed from the leaderboard.");
+        void vscode.window.showInformationMessage("Kiro Stat is private and removed from the leaderboard.");
       }
     } catch (error) {
       if (!options.silent) {
-        void vscode.window.showWarningMessage(`Kiro Profile could not remove the public leaderboard entry: ${String(error)}`);
+        void vscode.window.showWarningMessage(`Kiro Stat could not remove the public leaderboard entry: ${String(error)}`);
       }
     }
   }
@@ -369,10 +369,10 @@ async function getOrCreatePublicProfileId(context: vscode.ExtensionContext): Pro
 }
 
 async function collectProfileData(context: vscode.ExtensionContext): Promise<ProfileData> {
-  const config = vscode.workspace.getConfiguration("kiroActivityInsights");
+  const config = vscode.workspace.getConfiguration("kiroStat");
   const username = config.get<string>("username") || "kiro-builder";
   const configuredPlanLabel = config.get<string>("planLabel") || "Local";
-  const leaderboardUrl = config.get<string>("leaderboardUrl") || "http://localhost:3000";
+  const leaderboardUrl = config.get<string>("leaderboardUrl") || "https://kiro-profile-leaderboard-brown.vercel.app";
   const leaderboardPublic = context.globalState.get<boolean>("leaderboardPublic", false);
   const appRoots = getKiroAppDataRoots(os.homedir());
   const localAccount = await readLocalKiroAccount(appRoots);
@@ -1631,7 +1631,7 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
   <meta charset="UTF-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${cspSource} data:; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}';">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Kiro Activity Insights</title>
+  <title>Kiro Stat</title>
   <style nonce="${nonce}">
     :root {
       color-scheme: dark;
@@ -2844,10 +2844,10 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
       ctx.font = "600 18px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif";
       ctx.fillText(data.planLabel, badgeX + 16, 150);
       
-      // "Kiro Activity Insights" subtitle
+      // "Kiro Stat" subtitle
       ctx.font = "500 20px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif";
       ctx.fillStyle = "#6b7280";
-      ctx.fillText("Kiro Activity Insights", 220, 182);
+      ctx.fillText("Kiro Stat", 220, 182);
       
       // Featured stats - Only the most impressive ones
       const featuredStats = [
@@ -2952,7 +2952,7 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
       ctx.fillStyle = "rgba(155, 163, 180, 0.4)";
       ctx.font = "400 16px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText("Generated with Kiro Activity Insights • 100% Local & Private", canvas.width / 2, 730);
+      ctx.fillText("Generated with Kiro Stat • 100% Local & Private", canvas.width / 2, 730);
       
       const dataUrl = canvas.toDataURL("image/png");
       let copied = false;
@@ -2971,7 +2971,7 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
       if (!copied && navigator.clipboard) {
         try {
           await navigator.clipboard.writeText([
-            data.displayName + " - Kiro Activity Insights",
+            data.displayName + " - Kiro Stat",
             data.accountDetail + " · " + data.planLabel,
             "🎯 " + data.totalTokens + " total tokens",
             "⚡ " + data.peakTokens + " peak token day",

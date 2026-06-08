@@ -1,4 +1,4 @@
-# Complete Stats Reference - Kiro Activity Insights
+# Complete Stats Reference - Kiro Stat
 
 ## 📋 All Available Statistics
 
@@ -36,7 +36,7 @@
 
 ---
 
-## **Activity Insights Panel**
+## **Stats Panel**
 4 insight cards showing:
 1. Kiro launch summary
 2. Top programming language
