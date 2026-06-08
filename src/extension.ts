@@ -376,8 +376,8 @@ async function collectProfileData(context: vscode.ExtensionContext): Promise<Pro
   const leaderboardPublic = context.globalState.get<boolean>("leaderboardPublic", false);
   const appRoots = getKiroAppDataRoots(os.homedir());
   const localAccount = await readLocalKiroAccount(appRoots);
-  const displayName = localAccount?.displayName || config.get<string>("displayName") || "Kiro Developer";
   const accountLabel = localAccount?.accountLabel || username;
+  const displayName = localAccount?.displayName || accountLabel || config.get<string>("displayName") || "Kiro Developer";
   const accountDetail = localAccount?.accountDetail || `@${username}`;
   const planLabel = localAccount?.planLabel || configuredPlanLabel;
   const accountSource = localAccount?.accountSource || "Settings fallback";
@@ -925,7 +925,7 @@ async function readLocalKiroAccount(appRoots: string[]): Promise<LocalKiroAccoun
 
     const record = profile as Record<string, unknown>;
     const provider = stringValue(record.name);
-    const displayName = getLocalProfileDisplayName(record);
+    const displayName = await getLocalProfileDisplayName(record, appRoot);
     const hasArn = Boolean(stringValue(record.arn));
     const plan = await findLocalPlanLabel(agentStorageRoot);
 
@@ -942,7 +942,19 @@ async function readLocalKiroAccount(appRoots: string[]): Promise<LocalKiroAccoun
   return undefined;
 }
 
-function getLocalProfileDisplayName(record: Record<string, unknown>): string | undefined {
+async function getLocalProfileDisplayName(record: Record<string, unknown>, appRoot: string): Promise<string | undefined> {
+  for (const key of ["email", "accountEmail", "userEmail"]) {
+    const value = stringValue(record[key]);
+    if (isEmail(value)) {
+      return value;
+    }
+  }
+
+  const localEmail = await findLocalKiroEmail(appRoot);
+  if (localEmail) {
+    return localEmail;
+  }
+
   for (const key of ["displayName", "fullName", "userName", "username", "login"]) {
     const value = stringValue(record[key]);
     if (value && value.length <= 80 && !value.includes(":")) {
@@ -950,12 +962,63 @@ function getLocalProfileDisplayName(record: Record<string, unknown>): string | u
     }
   }
 
-  const email = stringValue(record.email);
-  if (email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return email.split("@")[0];
+  return undefined;
+}
+
+async function findLocalKiroEmail(appRoot: string): Promise<string | undefined> {
+  const userRoot = path.join(appRoot, "User");
+  const files = await listSmallJsonFiles(userRoot, 6, 200_000);
+  for (const file of files) {
+    if (file.includes(`${path.sep}History${path.sep}`) || file.includes(`${path.sep}workspaceStorage${path.sep}`)) {
+      continue;
+    }
+    const parsed = await readJsonFile(file);
+    const email = extractEmailLabel(parsed);
+    if (email) {
+      return email;
+    }
+  }
+  return undefined;
+}
+
+function extractEmailLabel(value: unknown, depth = 0): string | undefined {
+  if (!value || typeof value !== "object" || depth > 6) {
+    return undefined;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const email = extractEmailLabel(item, depth + 1);
+      if (email) {
+        return email;
+      }
+    }
+    return undefined;
+  }
+
+  const record = value as Record<string, unknown>;
+  for (const [key, rawValue] of Object.entries(record)) {
+    if (!/(^|_|-)(email|accountEmail|userEmail|login)(_|-|$)/i.test(key)) {
+      continue;
+    }
+    const email = stringValue(rawValue);
+    if (isEmail(email)) {
+      return email;
+    }
+  }
+
+  for (const child of Object.values(record)) {
+    const email = extractEmailLabel(child, depth + 1);
+    if (email) {
+      return email;
+    }
   }
 
   return undefined;
+}
+
+function isEmail(value: string | undefined): value is string {
+  return Boolean(value && value.length <= 120 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value));
 }
 
 async function findLocalPlanLabel(agentStorageRoot: string): Promise<{ label: string; source: string } | undefined> {
