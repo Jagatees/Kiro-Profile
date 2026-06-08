@@ -64,7 +64,7 @@ Configure your profile display through VS Code settings:
 
 Download the latest public VSIX:
 
-[kiro-activity-insights-0.2.11.vsix](https://github.com/Jagatees/Kiro-Profile/raw/main/releases/kiro-activity-insights-0.2.11.vsix)
+[kiro-activity-insights-0.2.11.vsix](https://github.com/Jagatees/Kiro-Profile/releases/download/v0.2.11/kiro-activity-insights-0.2.11.vsix)
 
 Then install it in Kiro:
 
