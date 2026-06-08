@@ -60,6 +60,19 @@ Configure your profile display through VS Code settings:
 
 ## Installation
 
+### Public Download
+
+Download the latest public VSIX:
+
+[kiro-activity-insights-0.2.11.vsix](https://github.com/Jagatees/Kiro-Profile/raw/main/releases/kiro-activity-insights-0.2.11.vsix)
+
+Then install it in Kiro:
+
+1. Open Command Palette (`Cmd+Shift+P` on macOS, `Ctrl+Shift+P` on Windows/Linux)
+2. Run **Extensions: Install from VSIX...**
+3. Select the downloaded `.vsix`
+4. Open **Kiro Profile** from the activity bar
+
 ### From VSIX File
 
 1. Download the latest `.vsix` file from releases or build from source

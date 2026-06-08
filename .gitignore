@@ -1,6 +1,7 @@
 node_modules/
 out/
 *.vsix
+!releases/*.vsix
 kiro-profile-shares/
 .DS_Store
 .env
