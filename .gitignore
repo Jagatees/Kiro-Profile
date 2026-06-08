@@ -2,3 +2,15 @@ node_modules/
 out/
 *.vsix
 kiro-profile-shares/
+.DS_Store
+.env
+.env.*
+!.env.example
+!web/.env.example
+.vercel/
+.next/
+dist/
+build/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
