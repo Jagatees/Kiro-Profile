@@ -11,6 +11,8 @@ type LeaderboardEntry = {
   submittedAt: string;
 };
 
+const extensionDownloadUrl = "/downloads/kiro-activity-insights-0.2.11.vsix";
+
 function compactNumber(value: number): string {
   return new Intl.NumberFormat("en", {
     notation: value >= 10_000 ? "compact" : "standard",
@@ -48,8 +50,16 @@ export default function Home() {
           <p className="eyebrow">Kiro Activity Insights</p>
           <h1>Kiro World Leaderboard</h1>
           <p className="lede">
-            Turn on Public inside the Kiro Activity Insights extension to publish your latest profile snapshot.
+            Install the Kiro Activity Insights extension, turn on Public in Kiro, and publish your latest profile snapshot to the world ranking.
           </p>
+          <div className="hero-actions">
+            <a className="primary-link" href={extensionDownloadUrl} download>
+              Download for Kiro
+            </a>
+            <a className="secondary-link" href="#leaderboard">
+              View leaderboard
+            </a>
+          </div>
           <div className="hero-stats" aria-label="Leaderboard summary">
             <span><strong>{entries.length}</strong> builders</span>
             <span><strong>{compactNumber(totalTokens)}</strong> tokens</span>
@@ -64,25 +74,30 @@ export default function Home() {
       <section className="workspace">
         <aside className="submit-panel">
           <div className="panel-head">
-            <span className="panel-icon">P</span>
+            <span className="panel-icon">K</span>
             <div>
-              <h2>Extension Only</h2>
-              <p>Profiles appear here only after the user turns on Public in the extension.</p>
+              <h2>Install in Kiro</h2>
+              <p>Download the VSIX from this site, then install it from Kiro.</p>
             </div>
           </div>
 
+          <a className="download-card" href={extensionDownloadUrl} download>
+            <strong>Kiro Activity Insights</strong>
+            <span>Version 0.2.11 · VSIX installer</span>
+          </a>
+
           <div className="sync-steps">
-            <div><strong>1</strong><span>Open Kiro Profile</span></div>
-            <div><strong>2</strong><span>Switch Private to Public</span></div>
-            <div><strong>3</strong><span>The extension syncs changed stats</span></div>
+            <div><strong>1</strong><span>Open Kiro Command Palette</span></div>
+            <div><strong>2</strong><span>Run Extensions: Install from VSIX...</span></div>
+            <div><strong>3</strong><span>Open Kiro Profile and switch Public on</span></div>
           </div>
 
           <p className="sync-note">
-            Public profiles update when the extension sees a changed token snapshot, or at least once every 24 hours while the profile view is active.
+            The website does not accept manual uploads. Profiles appear only when the extension sends a public snapshot.
           </p>
         </aside>
 
-        <section className="board" aria-label="Kiro token leaderboard">
+        <section className="board" id="leaderboard" aria-label="Kiro token leaderboard">
           <div className="board-head">
             <div>
               <h2>Global Ranking</h2>
