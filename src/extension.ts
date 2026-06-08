@@ -88,6 +88,7 @@ type KiroUsage = {
 type LocalKiroAccount = {
   accountLabel: string;
   accountDetail: string;
+  displayName?: string;
   accountSource: string;
   planLabel?: string;
   planSource: string;
@@ -369,13 +370,13 @@ async function getOrCreatePublicProfileId(context: vscode.ExtensionContext): Pro
 
 async function collectProfileData(context: vscode.ExtensionContext): Promise<ProfileData> {
   const config = vscode.workspace.getConfiguration("kiroActivityInsights");
-  const displayName = config.get<string>("displayName") || "Kiro Developer";
   const username = config.get<string>("username") || "kiro-builder";
   const configuredPlanLabel = config.get<string>("planLabel") || "Local";
   const leaderboardUrl = config.get<string>("leaderboardUrl") || "http://localhost:3000";
   const leaderboardPublic = context.globalState.get<boolean>("leaderboardPublic", false);
   const appRoots = getKiroAppDataRoots(os.homedir());
   const localAccount = await readLocalKiroAccount(appRoots);
+  const displayName = localAccount?.displayName || config.get<string>("displayName") || "Kiro Developer";
   const accountLabel = localAccount?.accountLabel || username;
   const accountDetail = localAccount?.accountDetail || `@${username}`;
   const planLabel = localAccount?.planLabel || configuredPlanLabel;
@@ -924,16 +925,34 @@ async function readLocalKiroAccount(appRoots: string[]): Promise<LocalKiroAccoun
 
     const record = profile as Record<string, unknown>;
     const provider = stringValue(record.name);
+    const displayName = getLocalProfileDisplayName(record);
     const hasArn = Boolean(stringValue(record.arn));
     const plan = await findLocalPlanLabel(agentStorageRoot);
 
     return {
       accountLabel: provider || "Kiro account",
       accountDetail: provider && hasArn ? `Signed in with ${provider}` : "Local profile",
+      displayName,
       accountSource: "Kiro profile.json",
       planLabel: plan?.label,
       planSource: plan?.source || "Settings fallback"
     };
+  }
+
+  return undefined;
+}
+
+function getLocalProfileDisplayName(record: Record<string, unknown>): string | undefined {
+  for (const key of ["displayName", "fullName", "userName", "username", "login"]) {
+    const value = stringValue(record[key]);
+    if (value && value.length <= 80 && !value.includes(":")) {
+      return value;
+    }
+  }
+
+  const email = stringValue(record.email);
+  if (email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return email.split("@")[0];
   }
 
   return undefined;
@@ -1939,43 +1958,23 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
     .app-header {
       display: flex;
       justify-content: space-between;
-      align-items: flex-start;
-      gap: 24px;
-      margin: 28px 0 20px;
-    }
-
-    .brand-row {
-      display: flex;
-      gap: 16px;
       align-items: center;
-    }
-
-    .brand-mark {
-      width: 34px;
-      height: 34px;
-      color: var(--kiro-pink);
-      filter: drop-shadow(0 0 14px rgba(239, 110, 219, 0.32));
-    }
-
-    .app-title {
-      margin: 0;
-      font-size: 34px;
-      line-height: 1.05;
-      font-weight: 760;
-      letter-spacing: 0;
+      gap: 24px;
+      margin: 18px 0 26px;
     }
 
     .profile-line {
       display: flex;
       align-items: center;
-      gap: 14px;
-      margin-top: 18px;
+      gap: 16px;
+      min-width: 0;
     }
 
     .profile-line .avatar {
-      width: 58px;
-      height: 58px;
-      font-size: 18px;
+      width: 72px;
+      height: 72px;
+      flex: 0 0 auto;
+      font-size: 24px;
       box-shadow: 0 0 30px rgba(165, 87, 255, 0.36);
     }
 
@@ -1986,8 +1985,9 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
 
     .profile-meta .name {
       margin: 0;
-      font-size: 18px;
-      font-weight: 700;
+      font-size: 22px;
+      line-height: 1.15;
+      font-weight: 760;
     }
 
     .header-actions {
@@ -1995,7 +1995,6 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
       flex-direction: column;
       align-items: flex-end;
       gap: 8px;
-      padding-top: 12px;
     }
 
     .sync-row {
@@ -2080,18 +2079,18 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
 
     .metric-grid {
       display: grid;
-      grid-template-columns: repeat(5, minmax(0, 1fr));
-      gap: 12px;
-      margin: 18px 0 16px;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 16px;
+      margin: 18px 0 18px;
     }
 
     .metric-card {
       position: relative;
-      min-height: 96px;
+      min-height: 150px;
       border: 1px solid rgba(255, 255, 255, 0.09);
       border-radius: 8px;
       background: linear-gradient(180deg, rgba(20, 23, 34, 0.9), rgba(12, 14, 22, 0.94));
-      padding: 14px;
+      padding: 18px;
       overflow: hidden;
       box-shadow: 0 14px 32px rgba(0, 0, 0, 0.24);
     }
@@ -2111,8 +2110,9 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
       justify-content: space-between;
       gap: 8px;
       color: #d8d1e8;
-      font-size: 12px;
-      font-weight: 650;
+      font-size: 15px;
+      line-height: 1.15;
+      font-weight: 700;
     }
 
     .metric-icon {
@@ -2128,8 +2128,8 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
     }
 
     .metric-value {
-      margin-top: 13px;
-      font-size: 30px;
+      margin-top: 26px;
+      font-size: 42px;
       line-height: 1;
       font-weight: 780;
       color: #b681ff;
@@ -2142,7 +2142,8 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
     .metric-sub {
       margin-top: 8px;
       color: var(--muted);
-      font-size: 11px;
+      font-size: 13px;
+      line-height: 1.2;
     }
 
     .metric-up {
@@ -2378,13 +2379,9 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
         grid-template-columns: 1fr;
       }
 
-      .app-header,
-      .brand-row {
-        align-items: flex-start;
-      }
-
       .app-header {
         flex-direction: column;
+        align-items: flex-start;
       }
 
       .header-actions {
@@ -2399,10 +2396,6 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
         grid-template-columns: 1fr;
       }
 
-      .app-title {
-        font-size: 28px;
-      }
-
       .heatmap {
         justify-content: start;
       }
@@ -2412,19 +2405,13 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
 <body>
   <main class="shell">
     <header class="app-header">
-      <div>
-        <div class="brand-row">
-          ${brandIcon()}
-          <h1 class="app-title">Kiro Activity Insights</h1>
-        </div>
-        <div class="profile-line">
-          <div class="avatar" id="profile-initials">${escapeHtml(data.initials)}</div>
-          <div class="profile-meta">
-            <div class="name" id="profile-name">${escapeHtml(data.displayName)}</div>
-            <div class="handle">
-              <span id="profile-account" title="${escapeHtml(data.accountLabel)}">${escapeHtml(data.accountDetail)}</span>
-              <span class="badge" id="profile-plan">${escapeHtml(data.planLabel)}</span>
-            </div>
+      <div class="profile-line">
+        <div class="avatar" id="profile-initials">${escapeHtml(data.initials)}</div>
+        <div class="profile-meta">
+          <div class="name" id="profile-name">${escapeHtml(data.displayName)}</div>
+          <div class="handle">
+            <span id="profile-account" title="${escapeHtml(data.accountLabel)}">${escapeHtml(data.accountDetail)}</span>
+            <span class="badge" id="profile-plan">${escapeHtml(data.planLabel)}</span>
           </div>
         </div>
       </div>
@@ -3044,10 +3031,6 @@ function unlockIcon(): string {
 
 function refreshIcon(): string {
   return `<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M20 12a8 8 0 0 1-13.2 6.1M4 12A8 8 0 0 1 17.2 5.9M17.2 5.9H13m4.2 0V2M6.8 18.1H11m-4.2 0V22" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-}
-
-function brandIcon(): string {
-  return `<svg class="brand-mark" viewBox="0 0 48 48" fill="none" aria-hidden="true"><path d="M9 30 17 18l8 9 7-16 7 14" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="9" cy="30" r="2.8" fill="currentColor"/><circle cx="17" cy="18" r="2.8" fill="currentColor"/><circle cx="25" cy="27" r="2.8" fill="currentColor"/><circle cx="32" cy="11" r="2.8" fill="currentColor"/><circle cx="39" cy="25" r="2.8" fill="currentColor"/></svg>`;
 }
 
 function calendarIcon(): string {

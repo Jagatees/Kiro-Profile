@@ -61,12 +61,12 @@
         "kiroActivityInsights.displayName": {
           "type": "string",
           "default": "Kiro Developer",
-          "description": "Display name shown on the profile card."
+          "description": "Fallback display name shown when Kiro does not expose a local account display name."
         },
         "kiroActivityInsights.username": {
           "type": "string",
           "default": "kiro-builder",
-          "description": "Username shown on the profile card."
+          "description": "Fallback handle used when no local Kiro account label is available."
         },
         "kiroActivityInsights.planLabel": {
           "type": "string",
