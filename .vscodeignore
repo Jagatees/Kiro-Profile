@@ -2,6 +2,7 @@
 .gitignore
 .vscode/**
 node_modules/**
+web/**
 kiro-profile-shares/**
 src/**
 *.vsix

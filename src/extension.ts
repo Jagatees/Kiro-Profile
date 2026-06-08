@@ -25,11 +25,16 @@ type ShareCardPayload = {
 type ProfileData = {
   displayName: string;
   username: string;
+  accountLabel: string;
+  accountDetail: string;
   planLabel: string;
+  leaderboardUrl: string;
+  leaderboardPublic: boolean;
   initials: string;
   kiroOpens30d: string;
   localSessions: string;
   totalTokens: string;
+  totalTokensRaw: number;
   peakTokens: string;
   totalCredits: string;
   currentStreak: string;
@@ -45,6 +50,7 @@ type ProfileData = {
   activityPatterns: NamedMetric[];
   toolStats: NamedMetric[];
   systemStats: NamedMetric[];
+  dataSources: NamedMetric[];
 };
 
 type KiroUsage = {
@@ -73,6 +79,18 @@ type KiroUsage = {
   subAgentInvocations: number;
   errorCount: number;
   warningCount: number;
+  cliSessionCount: number;
+  ideSessionCount: number;
+  tokenLogRows: number;
+  logDirCount: number;
+};
+
+type LocalKiroAccount = {
+  accountLabel: string;
+  accountDetail: string;
+  accountSource: string;
+  planLabel?: string;
+  planSource: string;
 };
 
 const IGNORE_DIRS = new Set([
@@ -119,7 +137,7 @@ const LANGUAGE_BY_EXTENSION = new Map<string, string>([
 ]);
 
 export function activate(context: vscode.ExtensionContext) {
-  const provider = new ProfileViewProvider(context.extensionUri);
+  const provider = new ProfileViewProvider(context);
 
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(ProfileViewProvider.viewType, provider, {
@@ -144,7 +162,7 @@ class ProfileViewProvider implements vscode.WebviewViewProvider {
   private view?: vscode.WebviewView;
   private didRender = false;
 
-  constructor(private readonly extensionUri: vscode.Uri) {}
+  constructor(private readonly context: vscode.ExtensionContext) {}
 
   async resolveWebviewView(webviewView: vscode.WebviewView) {
     this.view = webviewView;
@@ -159,6 +177,12 @@ class ProfileViewProvider implements vscode.WebviewViewProvider {
       if (message?.type === "share-card") {
         await this.saveShareCard(message.payload as ShareCardPayload);
       }
+      if (message?.type === "open-leaderboard") {
+        await this.openLeaderboard(message.url);
+      }
+      if (message?.type === "set-leaderboard-public") {
+        await this.setLeaderboardPublic(Boolean(message.enabled));
+      }
     });
 
     await this.refresh();
@@ -169,9 +193,12 @@ class ProfileViewProvider implements vscode.WebviewViewProvider {
       return;
     }
 
-    const data = await collectProfileData();
+    const data = await collectProfileData(this.context);
+    if (data.leaderboardPublic) {
+      await this.publishLeaderboardProfile(data, { force: false, silent: true });
+    }
     if (!this.didRender) {
-      this.view.webview.html = getProfileHtml(this.view.webview, this.extensionUri, data);
+      this.view.webview.html = getProfileHtml(this.view.webview, this.context.extensionUri, data);
       this.didRender = true;
       return;
     }
@@ -202,13 +229,158 @@ class ProfileViewProvider implements vscode.WebviewViewProvider {
         : "Clipboard copy was not available";
     void vscode.window.showInformationMessage(`${clipboardText}. Saved PNG: ${outputPath}`);
   }
+
+  private async openLeaderboard(rawUrl: unknown) {
+    if (typeof rawUrl !== "string") {
+      void vscode.window.showWarningMessage("Kiro Profile could not open the leaderboard URL.");
+      return;
+    }
+
+    let parsed: URL;
+    try {
+      parsed = new URL(rawUrl);
+    } catch {
+      void vscode.window.showWarningMessage("Kiro Profile leaderboard URL is not valid.");
+      return;
+    }
+
+    if (!["http:", "https:"].includes(parsed.protocol)) {
+      void vscode.window.showWarningMessage("Kiro Profile leaderboard URL must start with http or https.");
+      return;
+    }
+
+    await vscode.env.openExternal(vscode.Uri.parse(parsed.toString()));
+  }
+
+  private async setLeaderboardPublic(enabled: boolean) {
+    const wasPublic = this.context.globalState.get<boolean>("leaderboardPublic", false);
+    await this.context.globalState.update("leaderboardPublic", enabled);
+    const data = await collectProfileData(this.context);
+
+    if (enabled) {
+      await this.publishLeaderboardProfile(data, { force: true, silent: false });
+    } else if (wasPublic) {
+      await this.unpublishLeaderboardProfile(data, { silent: false });
+    }
+
+    await this.refresh();
+  }
+
+  private async publishLeaderboardProfile(data: ProfileData, options: { force: boolean; silent: boolean }) {
+    const endpoint = getLeaderboardApiUrl(data.leaderboardUrl);
+    const publicId = await getOrCreatePublicProfileId(this.context);
+    const snapshotHash = getLeaderboardSnapshotHash(data);
+    const lastHash = this.context.globalState.get<string>("leaderboardLastSnapshotHash");
+    const lastSyncedAt = this.context.globalState.get<number>("leaderboardLastSyncedAt", 0);
+    const syncIntervalMs = 24 * 60 * 60 * 1000;
+    const shouldSync = options.force || snapshotHash !== lastHash || Date.now() - lastSyncedAt >= syncIntervalMs;
+
+    if (!shouldSync) {
+      return;
+    }
+
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          publicId,
+          displayName: data.displayName,
+          handle: data.accountLabel || data.username,
+          tokensUsed: data.totalTokensRaw
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      await this.context.globalState.update("leaderboardLastSnapshotHash", snapshotHash);
+      await this.context.globalState.update("leaderboardLastSyncedAt", Date.now());
+
+      if (!options.silent) {
+        void vscode.window.showInformationMessage("Kiro Profile is public and synced to the leaderboard.");
+      }
+    } catch (error) {
+      if (!options.silent) {
+        void vscode.window.showWarningMessage(`Kiro Profile could not sync to the leaderboard: ${String(error)}`);
+      }
+    }
+  }
+
+  private async unpublishLeaderboardProfile(data: ProfileData, options: { silent: boolean }) {
+    const publicId = this.context.globalState.get<string>("leaderboardPublicId");
+    if (!publicId) {
+      return;
+    }
+
+    try {
+      const response = await fetch(getLeaderboardApiUrl(data.leaderboardUrl), {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ publicId })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      await this.context.globalState.update("leaderboardLastSnapshotHash", undefined);
+      await this.context.globalState.update("leaderboardLastSyncedAt", undefined);
+
+      if (!options.silent) {
+        void vscode.window.showInformationMessage("Kiro Profile is private and removed from the leaderboard.");
+      }
+    } catch (error) {
+      if (!options.silent) {
+        void vscode.window.showWarningMessage(`Kiro Profile could not remove the public leaderboard entry: ${String(error)}`);
+      }
+    }
+  }
 }
 
-async function collectProfileData(): Promise<ProfileData> {
+function getLeaderboardApiUrl(rawUrl: string): string {
+  const url = new URL(rawUrl || "http://localhost:3000");
+  url.pathname = `${url.pathname.replace(/\/$/, "")}/api/leaderboard`;
+  url.search = "";
+  url.hash = "";
+  return url.toString();
+}
+
+function getLeaderboardSnapshotHash(data: ProfileData): string {
+  return JSON.stringify({
+    leaderboardUrl: data.leaderboardUrl,
+    displayName: data.displayName,
+    handle: data.accountLabel || data.username,
+    tokensUsed: data.totalTokensRaw
+  });
+}
+
+async function getOrCreatePublicProfileId(context: vscode.ExtensionContext): Promise<string> {
+  const existing = context.globalState.get<string>("leaderboardPublicId");
+  if (existing) {
+    return existing;
+  }
+
+  const nextId = crypto.randomUUID();
+  await context.globalState.update("leaderboardPublicId", nextId);
+  return nextId;
+}
+
+async function collectProfileData(context: vscode.ExtensionContext): Promise<ProfileData> {
   const config = vscode.workspace.getConfiguration("kiroActivityInsights");
   const displayName = config.get<string>("displayName") || "Kiro Developer";
   const username = config.get<string>("username") || "kiro-builder";
-  const planLabel = config.get<string>("planLabel") || "Local";
+  const configuredPlanLabel = config.get<string>("planLabel") || "Local";
+  const leaderboardUrl = config.get<string>("leaderboardUrl") || "http://localhost:3000";
+  const leaderboardPublic = context.globalState.get<boolean>("leaderboardPublic", false);
+  const appRoots = getKiroAppDataRoots(os.homedir());
+  const localAccount = await readLocalKiroAccount(appRoots);
+  const accountLabel = localAccount?.accountLabel || username;
+  const accountDetail = localAccount?.accountDetail || `@${username}`;
+  const planLabel = localAccount?.planLabel || configuredPlanLabel;
+  const accountSource = localAccount?.accountSource || "Settings fallback";
+  const planSource = localAccount?.planLabel ? localAccount.planSource : "Settings fallback";
   const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   const [gitDays, kiroUsage] = await Promise.all([
     workspacePath ? getGitActivityDays(workspacePath) : Promise.resolve([]),
@@ -256,19 +428,29 @@ async function collectProfileData(): Promise<ProfileData> {
   const successRate = kiroUsage.totalTurns > 0
     ? ((kiroUsage.totalTurns - kiroUsage.failedTurns) / kiroUsage.totalTurns * 100)
     : 100;
+  const currentStreakLabel = `${currentStreak} days`;
+  const longestStreakLabel = `${longestStreak} days`;
+  const totalLanguageFiles = sumValues(fileStats);
+  const totalModelSessions = sumValues(kiroUsage.modelCounts);
+  const topModel = topModels[0];
 
   return {
     displayName,
     username,
+    accountLabel,
+    accountDetail,
     planLabel,
+    leaderboardUrl,
+    leaderboardPublic,
     initials: getInitials(displayName),
     kiroOpens30d: `${kiroUsage.opensLast30Days}`,
     localSessions: `${kiroUsage.sessionCount}`,
     totalTokens: formatCompact(kiroUsage.totalTokens),
+    totalTokensRaw: Math.max(0, Math.round(kiroUsage.totalTokens)),
     peakTokens: formatCompact(kiroUsage.peakDayTokens),
     totalCredits: formatCredits(kiroUsage.totalCredits),
-    currentStreak: `${currentStreak || 1} days`,
-    longestStreak: `${Math.max(longestStreak, currentStreak, 3)} days`,
+    currentStreak: currentStreakLabel,
+    longestStreak: longestStreakLabel,
     heatmap,
     availableYears,
     insights: [
@@ -279,11 +461,15 @@ async function collectProfileData(): Promise<ProfileData> {
       { name: "Credits recorded", value: formatCredits(kiroUsage.totalCredits) },
       { name: "Average turn length", value: formatDuration(Math.round(kiroUsage.averageTurnMinutes)) },
       { name: "Most used language", value: topItems[0]?.name || "TypeScript" },
-      { name: "Longest streak", value: `${Math.max(longestStreak, currentStreak, 3)} days` },
+      { name: "Longest streak", value: longestStreakLabel },
       { name: "Active days tracked", value: `${Math.max(activeCounts.length, 0)}` },
       { name: "Kiro hooks installed", value: `${kiroUsage.hookCount}` },
       { name: "Kiro powers installed", value: `${kiroUsage.powerCount}` },
       { name: "Kiro extensions installed", value: `${kiroUsage.extensionCount}` },
+      { name: "CLI sessions", value: `${kiroUsage.cliSessionCount}` },
+      { name: "IDE workspace sessions", value: `${kiroUsage.ideSessionCount}` },
+      { name: "Tracked language files", value: `${totalLanguageFiles}` },
+      { name: "Model events tracked", value: `${totalModelSessions}` },
       { name: "Largest local session", value: formatBytes(kiroUsage.largestSessionBytes) }
     ],
     topItems,
@@ -305,19 +491,29 @@ async function collectProfileData(): Promise<ProfileData> {
     activityPatterns: [
       { name: "Most Active Hour", value: mostActiveHour ? `${mostActiveHour[0]}:00 (${mostActiveHour[1]} events)` : "N/A" },
       { name: "Total Active Days", value: `${activeCounts.length}` },
-      { name: "Current Streak", value: `${currentStreak || 1} days` },
-      { name: "Longest Streak", value: `${Math.max(longestStreak, currentStreak, 3)} days` },
+      { name: "Current Streak", value: currentStreakLabel },
+      { name: "Longest Streak", value: longestStreakLabel },
       { name: "Avg Activity/Day", value: activeCounts.length > 0 ? `${(kiroUsage.totalTurns / activeCounts.length).toFixed(1)} turns` : "N/A" }
     ],
     toolStats: topTools.length > 0
       ? topTools.map(([name, count]) => ({ name, value: `${count} uses` }))
       : [{ name: "No tool data yet", value: "0 uses" }],
     systemStats: [
-      { name: "Errors Logged", value: `${kiroUsage.errorCount}` },
-      { name: "Warnings Logged", value: `${kiroUsage.warningCount}` },
       { name: "Hooks Installed", value: `${kiroUsage.hookCount}` },
       { name: "Powers Installed", value: `${kiroUsage.powerCount}` },
       { name: "Extensions Installed", value: `${kiroUsage.extensionCount}` }
+    ],
+    dataSources: [
+      { name: "Account Source", value: accountSource },
+      { name: "Plan Source", value: planSource },
+      { name: "CLI Session Files", value: `${kiroUsage.cliSessionCount}` },
+      { name: "IDE Session Files", value: `${kiroUsage.ideSessionCount}` },
+      { name: "Kiro Launch Log Dirs", value: `${kiroUsage.logDirCount}` },
+      { name: "Token Log Rows", value: `${kiroUsage.tokenLogRows}` },
+      { name: "Workspace Languages", value: `${fileStats.size}` },
+      { name: "Tracked Code Files", value: `${totalLanguageFiles}` },
+      { name: "Top Model", value: topModel ? formatModelName(topModel[0]) : "N/A" },
+      { name: "Top Model Events", value: topModel ? `${topModel[1]}` : "0" }
     ]
   };
 }
@@ -376,8 +572,8 @@ async function getWorkspaceFileStats(root: string): Promise<Map<string, number>>
 async function getKiroUsage(): Promise<KiroUsage> {
   const home = os.homedir();
   const kiroHome = path.join(home, ".kiro");
-  const appData = process.env.APPDATA;
-  const logsRoot = appData ? path.join(appData, "Kiro", "logs") : "";
+  const appRoots = getKiroAppDataRoots(home);
+  const logsRoots = appRoots.map((root) => path.join(root, "logs"));
   const days: string[] = [];
   let opensLast30Days = 0;
   let sessionCount = 0;
@@ -406,26 +602,33 @@ async function getKiroUsage(): Promise<KiroUsage> {
   let subAgentInvocations = 0;
   let errorCount = 0;
   let warningCount = 0;
+  let cliSessionCount = 0;
+  let ideSessionCount = 0;
+  let tokenLogRows = 0;
+  let logDirCount = 0;
 
-  try {
-    const logEntries = await fs.readdir(logsRoot, { withFileTypes: true });
-    for (const entry of logEntries) {
-      if (!entry.isDirectory()) {
-        continue;
+  for (const logsRoot of logsRoots) {
+    try {
+      const logEntries = await fs.readdir(logsRoot, { withFileTypes: true });
+      for (const entry of logEntries) {
+        if (!entry.isDirectory()) {
+          continue;
+        }
+        const match = /^(\d{4})(\d{2})(\d{2})T/.exec(entry.name);
+        if (!match) {
+          continue;
+        }
+        const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+        const day = toIsoDate(date);
+        days.push(day);
+        logDirCount += 1;
+        if (date >= cutoff) {
+          opensLast30Days += 1;
+        }
       }
-      const match = /^(\d{4})(\d{2})(\d{2})T/.exec(entry.name);
-      if (!match) {
-        continue;
-      }
-      const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
-      const day = toIsoDate(date);
-      days.push(day);
-      if (date >= cutoff) {
-        opensLast30Days += 1;
-      }
+    } catch {
+      // Kiro may not have written app logs yet.
     }
-  } catch {
-    // Kiro may not have written app logs yet.
   }
 
   try {
@@ -438,6 +641,7 @@ async function getKiroUsage(): Promise<KiroUsage> {
       const stat = await fs.stat(file);
       if (file.endsWith(".json")) {
         sessionCount += 1;
+        cliSessionCount += 1;
       }
       largestSessionBytes = Math.max(largestSessionBytes, stat.size);
       const fallbackDay = toIsoDate(stat.mtime);
@@ -462,11 +666,12 @@ async function getKiroUsage(): Promise<KiroUsage> {
       for (const [model, count] of metrics.modelCounts) {
         modelCounts.set(model, (modelCounts.get(model) || 0) + count);
       }
-      // New metrics
       totalTurns += metrics.totalTurns;
       failedTurns += metrics.failedTurns;
       promptTokens += metrics.promptTokens;
       generatedTokens += metrics.generatedTokens;
+      errorCount += metrics.errorCount;
+      warningCount += metrics.warningCount;
       subAgentInvocations += metrics.subAgentInvocations;
       if (metrics.sessionDuration > 0) {
         sessionDurations.push(metrics.sessionDuration);
@@ -485,8 +690,8 @@ async function getKiroUsage(): Promise<KiroUsage> {
     // Sessions are optional for fresh installs.
   }
 
-  if (appData) {
-    const kiroUserRoot = path.join(appData, "Kiro", "User");
+  for (const appRoot of appRoots) {
+    const kiroUserRoot = path.join(appRoot, "User");
     const agentStorageRoot = path.join(kiroUserRoot, "globalStorage", "kiro.kiroagent");
 
     // --- workspace sessions ---
@@ -538,20 +743,48 @@ async function getKiroUsage(): Promise<KiroUsage> {
 
         days.push(day);
         sessionCount += 1;
+        ideSessionCount += 1;
         largestSessionBytes = Math.max(largestSessionBytes, stat.size);
 
         const parsed = await readJsonFile(file) as Record<string, unknown> | undefined;
 
-        // Count history turns for turn stats
-        const history = parsed && Array.isArray(parsed.history) ? parsed.history as Record<string, unknown>[] : [];
-        const turnPairs = Math.floor(history.length / 2); // each user+assistant pair = 1 turn
-        totalTurns += turnPairs;
+        const metrics = collectSessionMetrics(parsed, stat.size, day);
+        totalTokens += metrics.tokens;
+        totalCredits += metrics.credits;
+        totalTurnSeconds += metrics.turnSeconds;
+        turnCount += metrics.turnCount;
+        totalTurns += metrics.totalTurns;
+        failedTurns += metrics.failedTurns;
+        promptTokens += metrics.promptTokens;
+        generatedTokens += metrics.generatedTokens;
+        subAgentInvocations += metrics.subAgentInvocations;
+        errorCount += metrics.errorCount;
+        warningCount += metrics.warningCount;
+        for (const metricDay of metrics.days) {
+          days.push(metricDay);
+        }
+        for (const [metricDay, tokens] of metrics.tokenCountsByDay) {
+          tokenCountsByDay.set(metricDay, (tokenCountsByDay.get(metricDay) || 0) + tokens);
+        }
+        for (const [model, count] of metrics.modelCounts) {
+          modelCounts.set(model, (modelCounts.get(model) || 0) + count);
+        }
+        for (const [tool, count] of metrics.toolUsage) {
+          toolUsageCounts.set(tool, (toolUsageCounts.get(tool) || 0) + count);
+        }
+        for (const [hour, count] of metrics.hourlyActivity) {
+          hourlyActivity.set(hour, (hourlyActivity.get(hour) || 0) + count);
+        }
+        if (metrics.sessionDuration > 0) {
+          sessionDurations.push(metrics.sessionDuration);
+        }
+        if (metrics.contextSize > 0) {
+          contextWindowUsage.push(metrics.contextSize);
+        }
 
-        // Extract model from selectedModel field
-        const selectedModelField = parsed?.selectedModel;
-        if (typeof selectedModelField === "string" && selectedModelField.trim()) {
-          const m = selectedModelField.trim();
-          modelCounts.set(m, (modelCounts.get(m) || 0) + 1);
+        const history = parsed && Array.isArray(parsed.history) ? parsed.history as Record<string, unknown>[] : [];
+        if (metrics.totalTurns === 0 && history.length > 0) {
+          totalTurns += Math.floor(history.length / 2);
         }
 
         // Estimate tokens from contextUsagePercentage
@@ -561,7 +794,7 @@ async function getKiroUsage(): Promise<KiroUsage> {
           const estimatedTokens = Math.round((ctxPct / 100) * 200_000);
           totalTokens += estimatedTokens;
           tokenCountsByDay.set(day, (tokenCountsByDay.get(day) || 0) + estimatedTokens);
-          contextWindowUsage.push(ctxPct);
+          contextWindowUsage.push(estimatedTokens);
         } else if (stat.size > 2048) {
           // fallback: rough estimate from file size (JSON overhead ~4 bytes per token)
           const sizeEstimate = Math.round(stat.size / 8);
@@ -578,6 +811,9 @@ async function getKiroUsage(): Promise<KiroUsage> {
       // Pass the known session dates so tokens can be spread across real days
       const knownDays = [...new Set(days)].filter(Boolean).sort();
       const tokenMetrics = await readTokenGenerationLog(tokenLogPath, knownDays);
+      tokenLogRows += tokenMetrics.rows;
+      promptTokens += tokenMetrics.promptTokens;
+      generatedTokens += tokenMetrics.generatedTokens;
       // Only add JSONL tokens if we don't already have better estimates from sessions
       if (totalTokens === 0) {
         totalTokens += tokenMetrics.tokens;
@@ -593,10 +829,6 @@ async function getKiroUsage(): Promise<KiroUsage> {
       // Dev token logs are optional and may be disabled.
     }
 
-    const selectedModel = await readSelectedKiroModel(path.join(kiroUserRoot, "settings.json"));
-    if (selectedModel) {
-      modelCounts.set(selectedModel, Math.max(modelCounts.get(selectedModel) || 0, 1));
-    }
   }
 
   hookCount = await countFiles(path.join(kiroHome, "hooks"), ".hook");
@@ -643,7 +875,11 @@ async function getKiroUsage(): Promise<KiroUsage> {
     contextWindowUsage,
     subAgentInvocations,
     errorCount,
-    warningCount
+    warningCount,
+    cliSessionCount,
+    ideSessionCount,
+    tokenLogRows,
+    logDirCount
   };
 }
 
@@ -664,7 +900,170 @@ type SessionMetrics = {
   generatedTokens: number;
   contextSize: number;
   subAgentInvocations: number;
+  errorCount: number;
+  warningCount: number;
 };
+
+function getKiroAppDataRoots(home: string): string[] {
+  const candidates = [
+    process.env.APPDATA ? path.join(process.env.APPDATA, "Kiro") : "",
+    process.platform === "darwin" ? path.join(home, "Library", "Application Support", "Kiro") : "",
+    process.env.XDG_CONFIG_HOME ? path.join(process.env.XDG_CONFIG_HOME, "Kiro") : "",
+    path.join(home, ".config", "Kiro")
+  ].filter(Boolean);
+  return [...new Set(candidates)];
+}
+
+async function readLocalKiroAccount(appRoots: string[]): Promise<LocalKiroAccount | undefined> {
+  for (const appRoot of appRoots) {
+    const agentStorageRoot = path.join(appRoot, "User", "globalStorage", "kiro.kiroagent");
+    const profile = await readJsonFile(path.join(agentStorageRoot, "profile.json"));
+    if (!profile || typeof profile !== "object") {
+      continue;
+    }
+
+    const record = profile as Record<string, unknown>;
+    const provider = stringValue(record.name);
+    const hasArn = Boolean(stringValue(record.arn));
+    const plan = await findLocalPlanLabel(agentStorageRoot);
+
+    return {
+      accountLabel: provider || "Kiro account",
+      accountDetail: provider && hasArn ? `Signed in with ${provider}` : "Local profile",
+      accountSource: "Kiro profile.json",
+      planLabel: plan?.label,
+      planSource: plan?.source || "Settings fallback"
+    };
+  }
+
+  return undefined;
+}
+
+async function findLocalPlanLabel(agentStorageRoot: string): Promise<{ label: string; source: string } | undefined> {
+  const candidateFiles = await listSmallJsonFiles(agentStorageRoot, 4, 100_000);
+  for (const file of candidateFiles) {
+    const parsed = await readJsonFile(file);
+    const label = extractPlanLabel(parsed);
+    if (label) {
+      return { label, source: "Detected local plan" };
+    }
+  }
+  return undefined;
+}
+
+async function listSmallJsonFiles(root: string, maxDepth: number, maxBytes: number): Promise<string[]> {
+  const files: string[] = [];
+
+  async function walk(current: string, depth: number) {
+    if (depth > maxDepth) {
+      return;
+    }
+
+    let entries;
+    try {
+      entries = await fs.readdir(current, { withFileTypes: true });
+    } catch {
+      return;
+    }
+
+    for (const entry of entries) {
+      const fullPath = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        if (!["workspace-sessions", "dev_data", "index"].includes(entry.name)) {
+          await walk(fullPath, depth + 1);
+        }
+        continue;
+      }
+
+      if (!entry.isFile() || !entry.name.toLowerCase().endsWith(".json")) {
+        continue;
+      }
+
+      try {
+        const stat = await fs.stat(fullPath);
+        if (stat.size <= maxBytes) {
+          files.push(fullPath);
+        }
+      } catch {
+        // Skip files that disappear while Kiro is writing local state.
+      }
+    }
+  }
+
+  await walk(root, 0);
+  return files;
+}
+
+function extractPlanLabel(value: unknown, depth = 0): string | undefined {
+  if (!value || typeof value !== "object" || depth > 6) {
+    return undefined;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const label = extractPlanLabel(item, depth + 1);
+      if (label) {
+        return label;
+      }
+    }
+    return undefined;
+  }
+
+  const record = value as Record<string, unknown>;
+  for (const key of ["plan", "planName", "tier", "subscription"]) {
+    const label = normalizePlanLabel(record[key]);
+    if (label) {
+      return label;
+    }
+  }
+
+  const usage = numberValue(record.usage);
+  const limit = numberValue(record.limit);
+  if (limit > 0 && usage >= 0) {
+    return `${formatCompact(usage)} / ${formatCompact(limit)}`;
+  }
+
+  const quota = record.quota;
+  if (quota && typeof quota === "object") {
+    const quotaRecord = quota as Record<string, unknown>;
+    for (const key of ["plan", "planName", "tier", "subscription"]) {
+      const label = normalizePlanLabel(quotaRecord[key]);
+      if (label) {
+        return label;
+      }
+    }
+    const quotaUsage = numberValue(quotaRecord.usage);
+    const quotaLimit = numberValue(quotaRecord.limit);
+    if (quotaLimit > 0 && quotaUsage >= 0) {
+      return `${formatCompact(quotaUsage)} / ${formatCompact(quotaLimit)}`;
+    }
+  }
+
+  for (const child of Object.values(record)) {
+    const label = extractPlanLabel(child, depth + 1);
+    if (label) {
+      return label;
+    }
+  }
+
+  return undefined;
+}
+
+function normalizePlanLabel(value: unknown): string | undefined {
+  const raw = stringValue(value);
+  if (!raw || raw.length > 48) {
+    return undefined;
+  }
+  const compact = raw.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+  if (!/\b(kiro|free|pro|plus|team|enterprise|trial|paid|subscription)\b/i.test(compact)) {
+    return undefined;
+  }
+  return compact.replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
 
 async function readJsonFile(filePath: string): Promise<unknown> {
   try {
@@ -676,12 +1075,18 @@ async function readJsonFile(filePath: string): Promise<unknown> {
 
 async function readTokenGenerationLog(filePath: string, sessionDates: string[]): Promise<{
   tokens: number;
+  promptTokens: number;
+  generatedTokens: number;
   tokenCountsByDay: Map<string, number>;
   modelCounts: Map<string, number>;
+  rows: number;
 }> {
   const tokenCountsByDay = new Map<string, number>();
   const modelCounts = new Map<string, number>();
   let tokens = 0;
+  let promptTokens = 0;
+  let generatedTokens = 0;
+  let parsedRows = 0;
 
   try {
     const content = await fs.readFile(filePath, "utf8");
@@ -694,8 +1099,13 @@ async function readTokenGenerationLog(filePath: string, sessionDates: string[]):
         const row = JSON.parse(line) as Record<string, unknown>;
         const rowTokens = numberValue(row.promptTokens) + numberValue(row.generatedTokens);
         const model = typeof row.model === "string" ? row.model.trim() : "";
-        rows.push({ promptTokens: numberValue(row.promptTokens), generatedTokens: numberValue(row.generatedTokens), model });
+        const rowPromptTokens = numberValue(row.promptTokens);
+        const rowGeneratedTokens = numberValue(row.generatedTokens);
+        rows.push({ promptTokens: rowPromptTokens, generatedTokens: rowGeneratedTokens, model });
         if (rowTokens > 0) tokens += rowTokens;
+        promptTokens += rowPromptTokens;
+        generatedTokens += rowGeneratedTokens;
+        parsedRows += 1;
         if (model && model !== "agent") {
           modelCounts.set(model, (modelCounts.get(model) || 0) + 1);
         }
@@ -704,7 +1114,7 @@ async function readTokenGenerationLog(filePath: string, sessionDates: string[]):
       }
     }
 
-    if (rows.length === 0) return { tokens, tokenCountsByDay, modelCounts };
+    if (rows.length === 0) return { tokens, promptTokens, generatedTokens, tokenCountsByDay, modelCounts, rows: parsedRows };
 
     // The JSONL has no timestamps. Distribute tokens across known session dates.
     // Each session day gets a proportional slice of the total rows.
@@ -720,10 +1130,10 @@ async function readTokenGenerationLog(filePath: string, sessionDates: string[]):
     });
 
   } catch {
-    return { tokens, tokenCountsByDay, modelCounts };
+    return { tokens, promptTokens, generatedTokens, tokenCountsByDay, modelCounts, rows: parsedRows };
   }
 
-  return { tokens, tokenCountsByDay, modelCounts };
+  return { tokens, promptTokens, generatedTokens, tokenCountsByDay, modelCounts, rows: parsedRows };
 }
 
 async function readSelectedKiroModel(settingsPath: string): Promise<string | undefined> {
@@ -753,7 +1163,9 @@ function collectSessionMetrics(root: unknown, fileSize: number, fallbackDay: str
     promptTokens: 0,
     generatedTokens: 0,
     contextSize: 0,
-    subAgentInvocations: 0
+    subAgentInvocations: 0,
+    errorCount: 0,
+    warningCount: 0
   };
 
   let sessionStartMs: number | undefined;
@@ -781,8 +1193,8 @@ function collectSessionMetrics(root: unknown, fileSize: number, fallbackDay: str
     }
 
     // --- tokens ---
-    const inputTokens = numberValue(record.input_token_count);
-    const outputTokens = numberValue(record.output_token_count);
+    const inputTokens = numberValue(record.input_token_count) || numberValue(record.inputTokens) || numberValue(record.promptTokens);
+    const outputTokens = numberValue(record.output_token_count) || numberValue(record.outputTokens) || numberValue(record.generatedTokens);
     const tokenTotal = inputTokens + outputTokens;
     if (tokenTotal > 0) {
       addTokens(discoveredDay, tokenTotal);
@@ -790,7 +1202,7 @@ function collectSessionMetrics(root: unknown, fileSize: number, fallbackDay: str
       if (outputTokens > 0) metrics.generatedTokens += outputTokens;
     }
 
-    const contextTokens = numberValue(record.context_token_count) || numberValue(record.contextTokens);
+    const contextTokens = numberValue(record.context_token_count) || numberValue(record.contextTokens) || numberValue(record.contextSize);
     if (contextTokens > 0) metrics.contextSize = Math.max(metrics.contextSize, contextTokens);
 
     // --- credits ---
@@ -822,10 +1234,19 @@ function collectSessionMetrics(root: unknown, fileSize: number, fallbackDay: str
     // --- failed turns ---
     if (record.error || record.failed === true || record.status === "error" || record.status === "failed") {
       metrics.failedTurns += 1;
+      metrics.errorCount += 1;
+    }
+    const level = String(record.level || record.severity || "").toLowerCase();
+    const messageKind = String(record.kind || record.type || "").toLowerCase();
+    if (level === "error" || messageKind === "error") {
+      metrics.errorCount += 1;
+    }
+    if (level === "warning" || level === "warn" || messageKind === "warning" || messageKind === "warn") {
+      metrics.warningCount += 1;
     }
 
     // --- tool usage ---
-    const toolName = record.tool_name || record.toolName;
+    const toolName = record.tool_name || record.toolName || record.name;
     if (typeof toolName === "string" && toolName.trim()) {
       const t = toolName.trim();
       metrics.toolUsage.set(t, (metrics.toolUsage.get(t) || 0) + 1);
@@ -837,8 +1258,8 @@ function collectSessionMetrics(root: unknown, fileSize: number, fallbackDay: str
     // --- hourly activity from timestamps ---
     for (const key of ["end_timestamp", "updated_at", "created_at", "timestamp"]) {
       const val = record[key];
-      if (typeof val === "string" || (typeof val === "number" && val > 1_000_000_000)) {
-        const d = new Date(typeof val === "number" ? val * 1000 : val);
+      const d = parseKiroDate(val);
+      if (d) {
         if (!Number.isNaN(d.getTime())) {
           metrics.hourlyActivity.set(d.getHours(), (metrics.hourlyActivity.get(d.getHours()) || 0) + 1);
           break;
@@ -848,14 +1269,16 @@ function collectSessionMetrics(root: unknown, fileSize: number, fallbackDay: str
 
     // --- session duration boundaries ---
     const createdAt = record.created_at || record.createdAt || record.start_timestamp;
-    if (typeof createdAt === "string" || typeof createdAt === "number") {
-      const t = new Date(typeof createdAt === "number" ? createdAt * 1000 : createdAt as string).getTime();
-      if (!Number.isNaN(t) && (!sessionStartMs || t < sessionStartMs)) sessionStartMs = t;
+    {
+      const date = parseKiroDate(createdAt);
+      const t = date?.getTime();
+      if (typeof t === "number" && !Number.isNaN(t) && (!sessionStartMs || t < sessionStartMs)) sessionStartMs = t;
     }
     const endedAt = record.end_timestamp || record.endedAt || record.updated_at;
-    if (typeof endedAt === "string" || typeof endedAt === "number") {
-      const t = new Date(typeof endedAt === "number" ? endedAt * 1000 : endedAt as string).getTime();
-      if (!Number.isNaN(t) && (!sessionEndMs || t > sessionEndMs)) sessionEndMs = t;
+    {
+      const date = parseKiroDate(endedAt);
+      const t = date?.getTime();
+      if (typeof t === "number" && !Number.isNaN(t) && (!sessionEndMs || t > sessionEndMs)) sessionEndMs = t;
     }
 
     // --- model info ---
@@ -896,21 +1319,29 @@ function collectSessionMetrics(root: unknown, fileSize: number, fallbackDay: str
 
 function getRecordDay(record: Record<string, unknown>): string | undefined {
   for (const key of ["end_timestamp", "updated_at", "created_at", "timestamp"]) {
-    const value = record[key];
-    if (typeof value === "string") {
-      const date = new Date(value);
-      if (!Number.isNaN(date.getTime())) {
-        return toIsoDate(date);
-      }
-    }
-    if (typeof value === "number" && value > 1_000_000_000) {
-      const date = new Date(value * 1000);
-      if (!Number.isNaN(date.getTime())) {
-        return toIsoDate(date);
-      }
+    const date = parseKiroDate(record[key]);
+    if (date) {
+      return toIsoDate(date);
     }
   }
   return undefined;
+}
+
+function parseKiroDate(value: unknown): Date | undefined {
+  if (typeof value === "string" && value.trim()) {
+    const numeric = Number(value);
+    const date = Number.isFinite(numeric) ? dateFromEpoch(numeric) : new Date(value);
+    return Number.isNaN(date.getTime()) ? undefined : date;
+  }
+  if (typeof value === "number" && Number.isFinite(value) && value > 1_000_000_000) {
+    const date = dateFromEpoch(value);
+    return Number.isNaN(date.getTime()) ? undefined : date;
+  }
+  return undefined;
+}
+
+function dateFromEpoch(value: number): Date {
+  return new Date(value > 1_000_000_000_000 ? value : value * 1000);
 }
 
 function numberValue(value: unknown): number {
@@ -999,13 +1430,6 @@ function buildHeatmapFromCounts(counts: Map<string, number>, fallbackDays: strin
     points.push({ date: key, count: counts.get(key) || 0 });
   }
 
-  if (fallbackDays.length === 0 && counts.size === 0) {
-    return points.map((point, index) => {
-      const synthetic = index > 250 && (index % 3 === 0 || index % 11 === 0) ? 800 + (index % 4) * 1_800 : 0;
-      return { ...point, count: synthetic };
-    });
-  }
-
   return points;
 }
 
@@ -1022,7 +1446,13 @@ function getAvailableYears(points: DayPoint[]): number[] {
 
 function getCurrentStreak(points: DayPoint[]): number {
   let streak = 0;
-  for (let index = points.length - 1; index >= 0; index -= 1) {
+  const today = toIsoDate(new Date());
+  let index = points.findIndex((point) => point.date === today);
+  if (index < 0) {
+    index = points.length - 1;
+  }
+
+  for (; index >= 0; index -= 1) {
     if (points[index].count <= 0) {
       break;
     }
@@ -1582,6 +2012,50 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
       box-shadow: 0 12px 28px rgba(0, 0, 0, 0.2);
     }
 
+    .leaderboard-button {
+      border: 0;
+      background: transparent;
+      padding: 8px;
+      color: var(--muted);
+    }
+
+    .public-toggle {
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.055);
+      color: #cfc7df;
+      min-width: 116px;
+      min-height: 38px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      padding: 8px 14px;
+      box-shadow: 0 12px 28px rgba(0, 0, 0, 0.16);
+      cursor: pointer;
+    }
+
+    .public-toggle #public-toggle-icon {
+      width: 18px;
+      height: 18px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .public-toggle #public-toggle-icon svg {
+      width: 15px;
+      height: 15px;
+    }
+
+    .public-toggle.is-public {
+      border-color: rgba(94, 234, 212, 0.58);
+      background: linear-gradient(135deg, rgba(94, 234, 212, 0.22), rgba(165, 87, 255, 0.28));
+      color: #d8fff7;
+    }
+
     .share-button {
       border: 0;
       background: transparent;
@@ -1792,6 +2266,15 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
       margin-top: 12px;
     }
 
+    .full-panel {
+      margin-top: 12px;
+    }
+
+    .dense-rows {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px 18px;
+    }
+
     .language-tiles {
       display: grid;
       grid-template-columns: repeat(6, minmax(0, 1fr));
@@ -1820,10 +2303,16 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
 
     .model-row {
       display: grid;
-      grid-template-columns: 28px 1fr auto;
+      grid-template-columns: 28px minmax(0, 1fr);
       align-items: center;
       column-gap: 10px;
       row-gap: 5px;
+    }
+
+    .model-copy {
+      display: grid;
+      gap: 2px;
+      min-width: 0;
     }
 
     .model-name {
@@ -1833,30 +2322,12 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
       text-overflow: ellipsis;
     }
 
-    .model-percent {
-      color: #d297ff;
-      font-weight: 700;
-      font-size: 13px;
-      text-align: right;
-      min-width: 44px;
-    }
-
-    .progress-track {
-      grid-column: 2 / 4;
-      height: 5px;
-      border-radius: 999px;
-      background: rgba(255, 255, 255, 0.08);
-      position: relative;
+    .model-detail {
+      color: var(--muted);
+      font-size: 11px;
+      white-space: nowrap;
       overflow: hidden;
-    }
-
-    .progress-fill {
-      position: absolute;
-      top: 0;
-      left: 0;
-      height: 100%;
-      border-radius: inherit;
-      background: linear-gradient(90deg, #6f45ff, #ef6edb);
+      text-overflow: ellipsis;
     }
 
     @media (max-width: 620px) {
@@ -1871,6 +2342,10 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
 
       .action span {
         display: none;
+      }
+
+      .public-toggle span {
+        display: inline-flex;
       }
 
       .hero {
@@ -1903,6 +2378,31 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
         grid-template-columns: 1fr;
       }
 
+      .app-header,
+      .brand-row {
+        align-items: flex-start;
+      }
+
+      .app-header {
+        flex-direction: column;
+      }
+
+      .header-actions {
+        align-items: flex-start;
+        padding-top: 0;
+      }
+
+      .metric-grid,
+      .dashboard-grid,
+      .bottom-grid,
+      .dense-rows {
+        grid-template-columns: 1fr;
+      }
+
+      .app-title {
+        font-size: 28px;
+      }
+
       .heatmap {
         justify-content: start;
       }
@@ -1922,7 +2422,7 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
           <div class="profile-meta">
             <div class="name" id="profile-name">${escapeHtml(data.displayName)}</div>
             <div class="handle">
-              <span id="profile-username">@${escapeHtml(data.username)}</span>
+              <span id="profile-account" title="${escapeHtml(data.accountLabel)}">${escapeHtml(data.accountDetail)}</span>
               <span class="badge" id="profile-plan">${escapeHtml(data.planLabel)}</span>
             </div>
           </div>
@@ -1930,6 +2430,8 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
       </div>
       <div class="header-actions">
         <div class="sync-row">
+          <button class="public-toggle ${data.leaderboardPublic ? "is-public" : ""}" title="Toggle public leaderboard profile" id="public-toggle" aria-pressed="${data.leaderboardPublic ? "true" : "false"}"><span id="public-toggle-icon">${data.leaderboardPublic ? globeIcon() : shieldLockIcon()}</span>${data.leaderboardPublic ? "Public" : "Private"}</button>
+          <button class="action leaderboard-button" title="Open leaderboard" id="leaderboard">${trophyIcon()}</button>
           <button class="action share-button" title="Save share card" id="share">${shareIcon()}</button>
           <button class="action sync-button" title="Refresh insights" id="refresh">${refreshIcon()}<span>Sync now</span></button>
         </div>
@@ -1938,15 +2440,14 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
     </header>
 
     <section class="metric-grid" aria-label="Profile stats">
-      ${metricCard("Kiro opens, 30d", data.kiroOpens30d, "18% vs prev 30d", trendIcon(), "", "stat-opens")}
+      ${metricCard("Plan / quota", data.planLabel, "From local profile or settings", starIcon(), "soft", "stat-plan")}
+      ${metricCard("Kiro opens, 30d", data.kiroOpens30d, "From local launch logs", trendIcon(), "", "stat-opens")}
+      ${metricCard("Local sessions", data.localSessions, "Tracked from Kiro sessions", calendarIcon(), "", "stat-sessions")}
       ${metricCard("Est. tokens", data.totalTokens, "From Kiro token log", cubeLineIcon(), "hot", "stat-tokens")}
-      ${metricCard("Peak token day", data.peakTokens, "Highest daily activity", calendarIcon(), "soft", "stat-peak")}
-      ${metricCard("Credits", data.totalCredits, "Recorded locally", starIcon(), "", "stat-credits")}
-      ${metricCard("Current streak", data.currentStreak.replace(" days", ""), "days", flameIcon(), "", "stat-streak")}
     </section>
 
     <section class="dashboard-grid">
-      <div class="panel">
+      <div class="panel full-panel">
         <div class="panel-head">
           <h2 class="panel-title">${calendarIcon()} Daily activity</h2>
           <div class="activity-controls">
@@ -1968,26 +2469,9 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
           <span>More activity</span>
         </div>
       </div>
-
-      <div class="panel">
-        <div class="panel-head">
-          <h2 class="panel-title">${bulbIcon()} Activity insights</h2>
-        </div>
-        <div class="insight-cards" id="insights-list">
-          ${insightCards(data)}
-        </div>
-      </div>
     </section>
 
     <section class="bottom-grid">
-      <div class="panel">
-        <div class="panel-head">
-          <h2 class="panel-title">${codeIcon()} Most used languages</h2>
-        </div>
-        <div class="language-tiles" id="languages-list">
-          ${languageTiles(data.topItems)}
-        </div>
-      </div>
       <div class="panel">
         <div class="panel-head">
           <h2 class="panel-title">${cubeLineIcon()} Most used models</h2>
@@ -1996,52 +2480,13 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
           ${modelRows(data.modelItems)}
         </div>
       </div>
-    </section>
-
-    <section class="bottom-grid" style="margin-top:12px;">
       <div class="panel">
         <div class="panel-head">
-          <h2 class="panel-title">${statsIcon()} Session Statistics</h2>
+          <h2 class="panel-title">${settingsIcon()} Kiro setup</h2>
         </div>
-        <div class="rows" id="session-stats-list">
-          ${simpleRows(data.sessionStats)}
+        <div class="rows" id="system-stats-list">
+          ${simpleRows(data.systemStats)}
         </div>
-      </div>
-      <div class="panel">
-        <div class="panel-head">
-          <h2 class="panel-title">${cubeIcon()} Token Breakdown</h2>
-        </div>
-        <div class="rows" id="token-stats-list">
-          ${simpleRows(data.tokenStats)}
-        </div>
-      </div>
-    </section>
-
-    <section class="bottom-grid" style="margin-top:12px;">
-      <div class="panel">
-        <div class="panel-head">
-          <h2 class="panel-title">${clockIcon()} Activity Patterns</h2>
-        </div>
-        <div class="rows" id="activity-patterns-list">
-          ${simpleRows(data.activityPatterns)}
-        </div>
-      </div>
-      <div class="panel">
-        <div class="panel-head">
-          <h2 class="panel-title">${toolIcon()} Top Tools Used</h2>
-        </div>
-        <div class="rows" id="tool-stats-list">
-          ${simpleRows(data.toolStats)}
-        </div>
-      </div>
-    </section>
-
-    <section class="panel" style="margin-top:12px;">
-      <div class="panel-head">
-        <h2 class="panel-title">${settingsIcon()} System Stats</h2>
-      </div>
-      <div class="rows" id="system-stats-list">
-        ${simpleRows(data.systemStats)}
       </div>
     </section>
   </main>
@@ -2053,6 +2498,8 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
     const yearSelect = document.getElementById("year-select");
     const refreshButton = document.getElementById("refresh");
     const refreshStatus = document.getElementById("refresh-status");
+    const leaderboardButton = document.getElementById("leaderboard");
+    const publicToggleButton = document.getElementById("public-toggle");
 
     function formatCompact(value) {
       if (value >= 1000000) return (value / 1000000).toFixed(1) + "M";
@@ -2072,11 +2519,10 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
       const max = Math.max(1, ...points.map((point) => point.count));
       heatmap.style.gridTemplateRows = "repeat(7, 11px)";
 
-      // Jan 1 weekday offset (Mon=0 … Sun=6)
       let offset = 0;
       if (points.length > 0) {
         const jan1 = new Date(points[0].date);
-        const dow = jan1.getDay(); // 0=Sun
+        const dow = jan1.getDay();
         offset = dow === 0 ? 6 : dow - 1;
         for (let i = 0; i < offset; i++) {
           const pad = document.createElement("span");
@@ -2086,31 +2532,29 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
         }
       }
 
-      // Cell size + gap in px (must match CSS: 11px cell + 4px gap = 15px per column)
-      const CELL = 15;
+      const cell = 15;
       const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
       let lastMonth = -1;
 
-      points.forEach((point, idx) => {
-        const cell = document.createElement("span");
+      points.forEach((point, index) => {
+        const cellEl = document.createElement("span");
         const ratio = point.count / max;
         const level = point.count <= 0 ? 0 : ratio > 0.75 ? 4 : ratio > 0.45 ? 3 : ratio > 0.2 ? 2 : 1;
-        cell.className = "cell level-" + level;
-        cell.title = point.count > 0
-          ? point.date + " \u2014 " + formatCompact(point.count) + " tokens"
-          : point.date + " \u2014 no activity";
-        heatmap.appendChild(cell);
+        cellEl.className = "cell level-" + level;
+        cellEl.title = point.count > 0
+          ? point.date + " - " + formatCompact(point.count) + " tokens"
+          : point.date + " - no activity";
+        heatmap.appendChild(cellEl);
 
-        // Build month label at the start of each new month
         const d = new Date(point.date);
         const month = d.getMonth();
         if (month !== lastMonth) {
           lastMonth = month;
-          const totalCells = offset + idx; // total cells including padding
-          const col = Math.floor(totalCells / 7); // which week column
+          const totalCells = offset + index;
+          const col = Math.floor(totalCells / 7);
           const label = document.createElement("span");
           label.textContent = monthNames[month];
-          label.style.left = (col * CELL) + "px";
+          label.style.left = (col * cell) + "px";
           monthsEl.appendChild(label);
         }
       });
@@ -2173,23 +2617,12 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
       ].map((item) => '<div class="insight-card"><span class="insight-icon">' + iconSvg(item.icon) + '</span><span class="insight-copy"><strong>' + escapeHtml(item.title) + '</strong><span>' + escapeHtml(item.detail) + '</span></span><span class="chev">›</span></div>').join("");
     }
 
-    function parseCount(value) {
-      const match = String(value).match(/\d+/);
-      return match ? Number(match[0]) : 1;
-    }
-
     function modelRows(items) {
-      const max = Math.max(1, ...items.map((item) => parseCount(item.value)));
       return items.map((item) => {
-        const count = parseCount(item.value);
-        const barWidth = Math.max(4, Math.round((count / max) * 100));
-        const relPct = Math.round((count / max) * 100);
         const iconSvg = '<svg viewBox="0 0 24 24" fill="none"><path d="M12 2 3 7v10l9 5 9-5V7l-9-5Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 12 3 7M12 12l9-5M12 12v10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
         return '<div class="model-row">' +
           '<span class="lang-icon model-icon">' + iconSvg + '</span>' +
-          '<span class="model-name">' + escapeHtml(item.name) + '</span>' +
-          '<span class="model-percent">' + relPct + '%</span>' +
-          '<div class="progress-track"><div class="progress-fill" style="width:' + barWidth + '%"></div></div>' +
+          '<span class="model-copy"><span class="model-name">' + escapeHtml(item.name) + '</span><span class="model-detail">' + escapeHtml(item.value) + '</span></span>' +
           '</div>';
       }).join("");
     }
@@ -2215,22 +2648,44 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
       data = nextData;
       setText("profile-initials", data.initials);
       setText("profile-name", data.displayName);
-      setText("profile-username", "@" + data.username);
+      setText("profile-account", data.accountDetail);
       setText("profile-plan", data.planLabel);
+      setText("stat-plan", data.planLabel);
       setText("stat-opens", data.kiroOpens30d);
+      setText("stat-sessions", data.localSessions);
       setText("stat-tokens", data.totalTokens);
-      setText("stat-peak", data.peakTokens);
-      setText("stat-credits", data.totalCredits);
-      setText("stat-streak", data.currentStreak);
-      document.getElementById("insights-list").innerHTML = insightCards(data);
-      document.getElementById("languages-list").innerHTML = data.topItems.map(topItemRow).join("");
       document.getElementById("models-list").innerHTML = modelRows(data.modelItems);
+      document.getElementById("system-stats-list").innerHTML = data.systemStats.map(insightRow).join("");
+      updatePublicToggle();
       updateYearOptions(data);
       renderHeatmap(yearSelect.value);
     }
 
-    yearSelect.addEventListener("change", () => renderHeatmap(yearSelect.value));
+    function updatePublicToggle() {
+      publicToggleButton.classList.toggle("is-public", Boolean(data.leaderboardPublic));
+      publicToggleButton.setAttribute("aria-pressed", data.leaderboardPublic ? "true" : "false");
+      publicToggleButton.innerHTML = '<span id="public-toggle-icon">' + (data.leaderboardPublic ? '${globeIcon()}' : '${shieldLockIcon()}') + '</span>' + (data.leaderboardPublic ? 'Public' : 'Private');
+      publicToggleButton.title = data.leaderboardPublic
+        ? "Profile is public and syncs on refresh"
+        : "Profile is private and does not sync";
+    }
 
+    function buildLeaderboardUrl() {
+      let url;
+      try {
+        url = new URL(data.leaderboardUrl || "http://localhost:3000");
+      } catch {
+        url = new URL("http://localhost:3000");
+      }
+
+      url.searchParams.set("name", data.displayName || "Kiro Developer");
+      url.searchParams.set("handle", data.accountLabel || data.username || "Local");
+      url.searchParams.set("tokens", String(Math.max(0, Math.round(Number(data.totalTokensRaw) || 0))));
+      return url.toString();
+    }
+
+    yearSelect.addEventListener("change", () => renderHeatmap(yearSelect.value));
+    updatePublicToggle();
     renderHeatmap(yearSelect.value);
 
     window.addEventListener("message", (event) => {
@@ -2248,6 +2703,17 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
       refreshButton.classList.add("is-loading");
       refreshStatus.textContent = "Refreshing";
       vscode.postMessage({ type: "refresh" });
+    });
+
+    leaderboardButton.addEventListener("click", () => {
+      vscode.postMessage({ type: "open-leaderboard", url: buildLeaderboardUrl() });
+    });
+
+    publicToggleButton.addEventListener("click", () => {
+      const nextValue = !data.leaderboardPublic;
+      publicToggleButton.innerHTML = '<span id="public-toggle-icon">' + (nextValue ? '${globeIcon()}' : '${shieldLockIcon()}') + '</span>' + (nextValue ? 'Publishing' : 'Private');
+      refreshStatus.textContent = nextValue ? "Publishing" : "Removing";
+      vscode.postMessage({ type: "set-leaderboard-public", enabled: nextValue });
     });
 
     document.getElementById("share").addEventListener("click", async () => {
@@ -2312,15 +2778,16 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
       
       ctx.font = "400 28px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif";
       ctx.fillStyle = "#9ba3b4";
-      ctx.fillText("@" + data.username, 220, 150);
+      ctx.fillText(data.accountDetail, 220, 150);
       
       // Badge
       ctx.fillStyle = "rgba(165, 87, 255, 0.25)";
       ctx.strokeStyle = "rgba(165, 87, 255, 0.5)";
       ctx.lineWidth = 2;
       ctx.beginPath();
-      const badgeX = 220 + ctx.measureText("@" + data.username).width + 16;
-      ctx.roundRect(badgeX, 128, 90, 32, 8);
+      const badgeX = 220 + ctx.measureText(data.accountDetail).width + 16;
+      const badgeWidth = Math.max(90, ctx.measureText(data.planLabel).width + 32);
+      ctx.roundRect(badgeX, 128, badgeWidth, 32, 8);
       ctx.fill();
       ctx.stroke();
       ctx.fillStyle = "#d4b3ff";
@@ -2335,8 +2802,8 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
       // Featured stats - Only the most impressive ones
       const featuredStats = [
         { label: "Total Tokens", value: data.totalTokens, icon: "🎯", gradient: true },
-        { label: "Peak Token Day", value: data.peakTokens, icon: "⚡", gradient: true },
-        { label: "Kiro Opens (30d)", value: data.kiroOpens30d, icon: "🚀", gradient: false }
+        { label: "Kiro Opens (30d)", value: data.kiroOpens30d, icon: "🚀", gradient: true },
+        { label: "Local Sessions", value: data.localSessions, icon: "📅", gradient: false }
       ];
       
       // Large featured cards
@@ -2388,15 +2855,16 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
       
       // Bottom stats row - smaller cards
       const bottomStats = [
-        { label: "Current Streak", value: data.currentStreak, icon: "🔥" },
-        { label: "Top Language", value: (data.insights.find((item) => item.name === "Most used language")?.value || "Unknown"), icon: "💻" },
-        { label: "Top Model", value: data.modelItems[0]?.name || "Auto", icon: "🤖" }
+        { label: "Top Model", value: data.modelItems[0]?.name || "Auto", icon: "🤖" },
+        { label: "Hooks", value: data.systemStats.find((item) => item.name === "Hooks Installed")?.value || "0", icon: "H" },
+        { label: "Powers", value: data.systemStats.find((item) => item.name === "Powers Installed")?.value || "0", icon: "P" },
+        { label: "Extensions", value: data.systemStats.find((item) => item.name === "Extensions Installed")?.value || "0", icon: "E" }
       ];
       
       bottomStats.forEach((stat, index) => {
-        const x = 70 + index * 430;
+        const x = 70 + index * 322;
         const y = 500;
-        const w = 400;
+        const w = 292;
         const h = 140;
         
         ctx.shadowColor = "rgba(0, 0, 0, 0.2)";
@@ -2454,6 +2922,7 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
         try {
           await navigator.clipboard.writeText([
             data.displayName + " - Kiro Activity Insights",
+            data.accountDetail + " · " + data.planLabel,
             "🎯 " + data.totalTokens + " total tokens",
             "⚡ " + data.peakTokens + " peak token day",
             "🚀 " + data.kiroOpens30d + " Kiro opens (30d)",
@@ -2525,24 +2994,10 @@ function modelItemRow(item: NamedMetric): string {
 }
 
 function modelRows(items: NamedMetric[]): string {
-  const counts = items.map((item) => parseMetricCount(item.value));
-  const max = Math.max(1, ...counts);
-  return items.map((item, index) => {
-    const count = counts[index];
-    const barWidth = Math.max(4, Math.round((count / max) * 100));
-    const relPct = Math.round((count / max) * 100);
-    return `<div class="model-row">` +
+  return items.map((item) => `<div class="model-row">` +
       `<span class="lang-icon model-icon">${modelIcon()}</span>` +
-      `<span class="model-name">${escapeHtml(item.name)}</span>` +
-      `<span class="model-percent">${relPct}%</span>` +
-      `<div class="progress-track"><div class="progress-fill" style="width:${barWidth}%"></div></div>` +
-      `</div>`;
-  }).join("");
-}
-
-function parseMetricCount(value: string): number {
-  const match = value.match(/\d+/);
-  return match ? Number(match[0]) : 1;
+      `<span class="model-copy"><span class="model-name">${escapeHtml(item.name)}</span><span class="model-detail">${escapeHtml(item.value)}</span></span>` +
+      `</div>`).join("");
 }
 
 function escapeHtml(value: string): string {
@@ -2567,8 +3022,24 @@ function shareIcon(): string {
   return `<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M5 14v4.5A1.5 1.5 0 0 0 6.5 20h13a1.5 1.5 0 0 0 1.5-1.5V14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 }
 
+function trophyIcon(): string {
+  return `<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8 4h8v3.5A4 4 0 0 1 12 11.5 4 4 0 0 1 8 7.5V4Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M8 6H5.5A1.5 1.5 0 0 0 4 7.5v.7A3.8 3.8 0 0 0 8.2 12M16 6h2.5A1.5 1.5 0 0 1 20 7.5v.7A3.8 3.8 0 0 1 15.8 12M12 11.5V17M8.5 20h7M10 17h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+}
+
+function shieldLockIcon(): string {
+  return `<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3.2 5.5 5.6v5.2c0 4.2 2.6 7.7 6.5 9.2 3.9-1.5 6.5-5 6.5-9.2V5.6L12 3.2Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M9.5 12h5v4h-5v-4ZM10.5 12v-1.2a1.5 1.5 0 0 1 3 0V12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+}
+
+function globeIcon(): string {
+  return `<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z" stroke="currentColor" stroke-width="1.8"/><path d="M3.6 9h16.8M3.6 15h16.8M12 3c2.2 2.4 3.2 5.3 3.2 9S14.2 18.6 12 21M12 3C9.8 5.4 8.8 8.3 8.8 12s1 6.6 3.2 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`;
+}
+
 function lockIcon(): string {
   return `<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7 10V8a5 5 0 0 1 10 0v2M6.5 10h11A1.5 1.5 0 0 1 19 11.5v7A1.5 1.5 0 0 1 17.5 20h-11A1.5 1.5 0 0 1 5 18.5v-7A1.5 1.5 0 0 1 6.5 10Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`;
+}
+
+function unlockIcon(): string {
+  return `<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8 10V7.8a4.3 4.3 0 0 1 8.1-2M6.5 10h11A1.5 1.5 0 0 1 19 11.5v7A1.5 1.5 0 0 1 17.5 20h-11A1.5 1.5 0 0 1 5 18.5v-7A1.5 1.5 0 0 1 6.5 10Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`;
 }
 
 function refreshIcon(): string {
@@ -2621,6 +3092,10 @@ function toolIcon(): string {
 
 function settingsIcon(): string {
   return `<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M10.3 3.5h3.4l.8 2.2c.3.1.6.3.9.5l2.1-.8 1.7 3-1.5 1.7c0 .3.1.6.1.9 0 .3 0 .6-.1.9l1.5 1.7-1.7 3-2.1-.8c-.3.2-.6.4-.9.5l-.8 2.2h-3.4l-.8-2.2c-.3-.1-.6-.3-.9-.5l-2.1.8-1.7-3 1.5-1.7c0-.3-.1-.6-.1-.9 0-.3 0-.6.1-.9L5.8 9.4l1.7-3 2.1.8c.3-.2.6-.4.9-.5l.8-2.2Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="12" r="2.5" stroke="currentColor" stroke-width="1.8"/></svg>`;
+}
+
+function databaseIcon(): string {
+  return `<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><ellipse cx="12" cy="5" rx="7" ry="3" stroke="currentColor" stroke-width="1.8"/><path d="M5 5v7c0 1.7 3.1 3 7 3s7-1.3 7-3V5M5 12v7c0 1.7 3.1 3 7 3s7-1.3 7-3v-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`;
 }
 
 function simpleRows(items: NamedMetric[]): string {

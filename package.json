@@ -2,9 +2,10 @@
   "name": "kiro-activity-insights",
   "displayName": "Kiro Activity Insights",
   "description": "A private, local activity profile for Kiro IDE.",
-  "version": "0.2.7",
+  "version": "0.2.11",
   "publisher": "jagatees",
   "license": "MIT",
+  "icon": "resources/icon.png",
   "repository": {
     "type": "git",
     "url": "https://github.com/jagatees/kiro-profile.git"
@@ -71,6 +72,11 @@
           "type": "string",
           "default": "Local",
           "description": "Small account label shown beside the username."
+        },
+        "kiroActivityInsights.leaderboardUrl": {
+          "type": "string",
+          "default": "https://kiro-profile-leaderboard-brown.vercel.app",
+          "description": "Leaderboard website URL opened by the Submit Profile button."
         }
       }
     },
