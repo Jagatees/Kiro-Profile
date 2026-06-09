@@ -11,7 +11,7 @@ type LeaderboardEntry = {
   submittedAt: string;
 };
 
-const extensionDownloadUrl = "/downloads/kiro-stat-0.2.12.vsix";
+const extensionDownloadUrl = "/downloads/kiro-stat-0.2.13.vsix";
 
 function compactNumber(value: number): string {
   return new Intl.NumberFormat("en", {
@@ -83,7 +83,7 @@ export default function Home() {
 
           <a className="download-card" href={extensionDownloadUrl} download>
             <strong>Kiro Stat</strong>
-            <span>Version 0.2.12 · VSIX installer</span>
+            <span>Version 0.2.13 · VSIX installer</span>
           </a>
 
           <div className="sync-steps">
