@@ -11,7 +11,7 @@ type LeaderboardEntry = {
   submittedAt: string;
 };
 
-const extensionDownloadUrl = "/downloads/kiro-stat-0.2.13.vsix";
+const marketplaceUrl = "https://open-vsx.org/extension/jagatees/kiro-stat";
 
 function compactNumber(value: number): string {
   return new Intl.NumberFormat("en", {
@@ -53,8 +53,8 @@ export default function Home() {
             Install the Kiro Stat extension, turn on Public in Kiro, and publish your latest profile snapshot to the world ranking.
           </p>
           <div className="hero-actions">
-            <a className="primary-link" href={extensionDownloadUrl} download>
-              Download for Kiro
+            <a className="primary-link" href={marketplaceUrl} target="_blank" rel="noreferrer">
+              View on Open VSX
             </a>
             <a className="secondary-link" href="#leaderboard">
               View leaderboard
@@ -77,18 +77,18 @@ export default function Home() {
             <span className="panel-icon">K</span>
             <div>
               <h2>Install in Kiro</h2>
-              <p>Download the VSIX from this site, then install it from Kiro.</p>
+              <p>Install from Kiro&apos;s Extensions marketplace. No file download needed.</p>
             </div>
           </div>
 
-          <a className="download-card" href={extensionDownloadUrl} download>
+          <a className="download-card" href={marketplaceUrl} target="_blank" rel="noreferrer">
             <strong>Kiro Stat</strong>
-            <span>Version 0.2.13 · VSIX installer</span>
+            <span>Available in Kiro Extensions as jagatees.kiro-stat</span>
           </a>
 
           <div className="sync-steps">
-            <div><strong>1</strong><span>Open Kiro Command Palette</span></div>
-            <div><strong>2</strong><span>Run Extensions: Install from VSIX...</span></div>
+            <div><strong>1</strong><span>Open Extensions in Kiro</span></div>
+            <div><strong>2</strong><span>Search for Kiro Stat and install it</span></div>
             <div><strong>3</strong><span>Open Kiro Stat and switch Public on</span></div>
           </div>
 

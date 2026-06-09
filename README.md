@@ -60,24 +60,20 @@ Configure your profile display through VS Code settings:
 
 ## Installation
 
-### Public Download
-
-Download the latest public VSIX:
-
-[kiro-stat-0.2.13.vsix](https://kiro-profile-leaderboard-brown.vercel.app/downloads/kiro-stat-0.2.13.vsix)
-
-Then install it in Kiro:
-
-1. Open Command Palette (`Cmd+Shift+P` on macOS, `Ctrl+Shift+P` on Windows/Linux)
-2. Run **Extensions: Install from VSIX...**
-3. Select the downloaded `.vsix`
-4. Open **Kiro Stat** from the activity bar
-
 ### Kiro Extension Marketplace
 
-The hosted VSIX lets users install without visiting GitHub. To make the extension searchable directly inside Kiro's Extensions view, publish the package to Open VSX with an Open VSX publisher account and access token.
+Install directly inside Kiro:
 
-### From VSIX File
+1. Open the **Extensions** view in Kiro
+2. Search for **Kiro Stat**
+3. Install **Kiro Stat** by `jagatees`
+4. Open **Kiro Stat** from the activity bar
+
+Marketplace page: [jagatees.kiro-stat](https://open-vsx.org/extension/jagatees/kiro-stat)
+
+### Manual VSIX Install
+
+Use this only for local testing or offline installs:
 
 1. Download the latest `.vsix` file from releases or build from source
 2. Install in Kiro IDE:
