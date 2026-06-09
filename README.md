@@ -6,7 +6,7 @@
 
 A Kiro IDE profile panel that shows local activity stats, optional public leaderboard sharing, and a clean share card.
 
-![Version](https://img.shields.io/badge/version-0.2.11-blue)
+![Version](https://img.shields.io/badge/version-0.2.12-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 ## Features
@@ -64,7 +64,7 @@ Configure your profile display through VS Code settings:
 
 Download the latest public VSIX:
 
-[kiro-stat-0.2.11.vsix](https://kiro-profile-leaderboard-brown.vercel.app/downloads/kiro-stat-0.2.11.vsix)
+[kiro-stat-0.2.12.vsix](https://kiro-profile-leaderboard-brown.vercel.app/downloads/kiro-stat-0.2.12.vsix)
 
 Then install it in Kiro:
 
@@ -300,6 +300,10 @@ Contributions are welcome! Areas for improvement:
 MIT License - see [LICENSE](LICENSE) file for details
 
 ## Changelog
+
+### 0.2.12
+
+- Updated the activity bar icon to a clearer analytics chart mark.
 
 ### 0.2.11
 - Current stable release
