@@ -2537,11 +2537,11 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
       ${metricCard("Plan / quota", data.planLabel, "From local profile or settings", starIcon(), "soft", "stat-plan")}
       ${metricCard("Kiro opens, 30d", data.kiroOpens30d, "From local launch logs", trendIcon(), "", "stat-opens")}
       ${metricCard("Local sessions", data.localSessions, "Tracked from Kiro sessions", calendarIcon(), "", "stat-sessions")}
-      ${metricCard("Est. tokens", data.totalTokens, "From Kiro token log", cubeLineIcon(), "hot", "stat-tokens")}
+      ${metricCard("Credits used", data.totalCredits, "Metered by Kiro billing", cubeLineIcon(), "hot", "stat-credits")}
     </section>
 
     <section class="stats" aria-label="Profile highlights">
-      ${statBlock(data.totalCredits, "Credits used", "stat-token", "stat-credits")}
+      ${statBlock(data.totalTokens, "Est. tokens", "stat-token", "stat-tokens")}
       ${statBlock(data.currentStreak, "Current streak", "", "stat-current-streak")}
       ${statBlock(data.longestStreak, "Longest streak", "", "stat-longest-streak")}
       ${statBlock(data.peakTokens, "Peak token day", "stat-peak", "stat-peak-tokens")}
@@ -2975,9 +2975,9 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
       
       // Featured stats - Only the most impressive ones
       const featuredStats = [
-        { label: "Total Tokens", value: data.totalTokens, icon: "🎯", gradient: true },
-        { label: "Kiro Opens (30d)", value: data.kiroOpens30d, icon: "🚀", gradient: true },
-        { label: "Local Sessions", value: data.localSessions, icon: "📅", gradient: false }
+        { label: "Credits Used", value: data.totalCredits, icon: "⚡", gradient: true },
+        { label: "Est. Tokens", value: data.totalTokens, icon: "🎯", gradient: true },
+        { label: "Kiro Opens (30d)", value: data.kiroOpens30d, icon: "🚀", gradient: false }
       ];
       
       // Large featured cards
@@ -3097,7 +3097,8 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
           await navigator.clipboard.writeText([
             data.displayName + " - Kiro Stat",
             data.accountDetail + " · " + data.planLabel,
-            "🎯 " + data.totalTokens + " total tokens",
+            "⚡ " + data.totalCredits + " credits used",
+            "🎯 " + data.totalTokens + " est. tokens",
             "⚡ " + data.peakTokens + " peak token day",
             "🚀 " + data.kiroOpens30d + " Kiro opens (30d)",
             "🔥 " + data.currentStreak + " current streak",
