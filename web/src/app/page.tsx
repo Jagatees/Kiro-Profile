@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 
 type LeaderboardEntry = {
@@ -8,10 +7,68 @@ type LeaderboardEntry = {
   displayName: string;
   handle: string;
   tokensUsed: number;
+  creditsUsed: number;
+  currentStreak: number;
+  longestStreak: number;
+  sessions: number;
+  activeDays: number;
   submittedAt: string;
 };
 
+type Category = {
+  id: string;
+  label: string;
+  unit: string;
+  description: string;
+  value: (entry: LeaderboardEntry) => number;
+};
+
 const marketplaceUrl = "https://open-vsx.org/extension/jagatees/kiro-stat";
+
+const categories: Category[] = [
+  {
+    id: "tokens",
+    label: "Tokens",
+    unit: "tokens",
+    description: "Estimated tokens used across all local Kiro sessions.",
+    value: (entry) => entry.tokensUsed
+  },
+  {
+    id: "credits",
+    label: "Credits",
+    unit: "credits",
+    description: "Credits recorded from local Kiro metering data.",
+    value: (entry) => entry.creditsUsed
+  },
+  {
+    id: "streak",
+    label: "Streak",
+    unit: "day streak",
+    description: "Consecutive days of activity, counted up to today.",
+    value: (entry) => entry.currentStreak
+  },
+  {
+    id: "best-streak",
+    label: "Best Streak",
+    unit: "days",
+    description: "Longest run of consecutive active days on record.",
+    value: (entry) => entry.longestStreak
+  },
+  {
+    id: "sessions",
+    label: "Sessions",
+    unit: "sessions",
+    description: "Local Kiro sessions tracked by the extension.",
+    value: (entry) => entry.sessions
+  },
+  {
+    id: "active-days",
+    label: "Active Days",
+    unit: "days",
+    description: "Total days with tracked Kiro or git activity.",
+    value: (entry) => entry.activeDays
+  }
+];
 
 function compactNumber(value: number): string {
   return new Intl.NumberFormat("en", {
@@ -20,23 +77,39 @@ function compactNumber(value: number): string {
   }).format(value);
 }
 
-function rankLabel(index: number): string {
-  return index === 0 ? "World #1" : `Rank #${index + 1}`;
-}
-
 export default function Home() {
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [categoryId, setCategoryId] = useState(categories[0].id);
+
+  const category = categories.find((item) => item.id === categoryId) ?? categories[0];
+
+  const ranked = useMemo(() => {
+    return [...entries].sort((a, b) => {
+      const diff = category.value(b) - category.value(a);
+      if (diff !== 0) {
+        return diff;
+      }
+      return new Date(a.submittedAt).getTime() - new Date(b.submittedAt).getTime();
+    });
+  }, [entries, category]);
 
   const totalTokens = useMemo(
     () => entries.reduce((sum, entry) => sum + entry.tokensUsed, 0),
     [entries]
   );
-  const topEntry = entries[0];
+  const topValue = ranked.length > 0 ? category.value(ranked[0]) : 0;
 
   async function loadLeaderboard() {
-    const response = await fetch("/api/leaderboard", { cache: "no-store" });
-    const payload = await response.json() as { entries?: LeaderboardEntry[] };
-    setEntries(payload.entries || []);
+    try {
+      const response = await fetch("/api/leaderboard", { cache: "no-store" });
+      const payload = await response.json() as { entries?: LeaderboardEntry[] };
+      setEntries(payload.entries || []);
+    } catch {
+      setEntries([]);
+    } finally {
+      setLoaded(true);
+    }
   }
 
   useEffect(() => {
@@ -44,98 +117,95 @@ export default function Home() {
   }, []);
 
   return (
-    <main className="page-shell">
-      <section className="hero">
-        <div className="hero-copy">
-          <p className="eyebrow">Kiro Stat</p>
-          <h1>Kiro Stat Leaderboard</h1>
-          <p className="lede">
-            Install the Kiro Stat extension, turn on Public in Kiro, and publish your latest profile snapshot to the world ranking.
-          </p>
-          <div className="hero-actions">
-            <a className="primary-link" href={marketplaceUrl} target="_blank" rel="noreferrer">
-              View on Open VSX
-            </a>
-            <a className="secondary-link" href="#leaderboard">
-              View leaderboard
-            </a>
-          </div>
-          <div className="hero-stats" aria-label="Leaderboard summary">
-            <span><strong>{entries.length}</strong> builders</span>
-            <span><strong>{compactNumber(totalTokens)}</strong> tokens</span>
-            <span><strong>{topEntry ? topEntry.displayName : "Open"}</strong> leader</span>
-          </div>
-        </div>
-        <div className="hero-visual" aria-hidden="true">
-          <Image src="/kiro-leaderboard-og.png" alt="" width={440} height={440} priority />
-        </div>
+    <main className="shell">
+      <header className="top">
+        <span className="wordmark">Kiro Stat</span>
+        <a className="top-link" href={marketplaceUrl} target="_blank" rel="noreferrer">
+          Get the extension
+        </a>
+      </header>
+
+      <section className="intro">
+        <h1>Global rankings</h1>
+        <p className="lede">
+          Builders who installed the Kiro Stat extension and switched their profile to public.
+          Rankings update from local stats only — nothing else leaves your machine.
+        </p>
+        <p className="summary">
+          {entries.length} {entries.length === 1 ? "builder" : "builders"} · {compactNumber(totalTokens)} tokens tracked
+        </p>
       </section>
 
-      <section className="workspace">
-        <aside className="submit-panel">
-          <div className="panel-head">
-            <span className="panel-icon">K</span>
-            <div>
-              <h2>Install in Kiro</h2>
-              <p>Install from Kiro&apos;s Extensions marketplace. No file download needed.</p>
-            </div>
+      <nav className="tabs" aria-label="Ranking categories">
+        {categories.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            className={item.id === category.id ? "tab tab-active" : "tab"}
+            onClick={() => setCategoryId(item.id)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </nav>
+
+      <section className="board" aria-label={`${category.label} leaderboard`}>
+        <div className="board-head">
+          <p>{category.description}</p>
+          <button className="refresh" type="button" onClick={() => void loadLeaderboard()}>
+            Refresh
+          </button>
+        </div>
+
+        {!loaded ? (
+          <div className="empty">Loading rankings…</div>
+        ) : ranked.length === 0 ? (
+          <div className="empty">
+            No public profiles yet. Install the extension and switch Public on to claim the first spot.
           </div>
-
-          <a className="download-card" href={marketplaceUrl} target="_blank" rel="noreferrer">
-            <strong>Kiro Stat</strong>
-            <span>Available in Kiro Extensions as jagatees.kiro-stat</span>
-          </a>
-
-          <div className="sync-steps">
-            <div><strong>1</strong><span>Open Extensions in Kiro</span></div>
-            <div><strong>2</strong><span>Search for Kiro Stat and install it</span></div>
-            <div><strong>3</strong><span>Open Kiro Stat and switch Public on</span></div>
-          </div>
-
-          <p className="sync-note">
-            The website does not accept manual uploads. Profiles appear only when the extension sends a public snapshot.
-          </p>
-        </aside>
-
-        <section className="board" id="leaderboard" aria-label="Kiro token leaderboard">
-          <div className="board-head">
-            <div>
-              <h2>Global Ranking</h2>
-              <p>Ranked by public extension snapshots, sorted by token usage.</p>
-            </div>
-            <button className="ghost-button" type="button" onClick={() => void loadLeaderboard()}>
-              Refresh
-            </button>
-          </div>
-
-          <div className="entries">
-            {entries.length === 0 ? (
-              <div className="empty-state">
-                <strong>No profiles yet.</strong>
-                <span>Turn on Public in the extension to claim the first spot.</span>
-              </div>
-            ) : entries.map((entry, index) => (
-              <article className="entry" key={entry.id}>
-                <div className="rank">{index + 1}</div>
-                <div className="entry-main">
-                  <div className="entry-name-row">
-                    <h3>{entry.displayName}</h3>
-                    <span>{rankLabel(index)}</span>
-                  </div>
-                  <p>{entry.handle}</p>
-                  <div className="token-meter">
-                    <span style={{ width: `${Math.max(8, topEntry ? (entry.tokensUsed / topEntry.tokensUsed) * 100 : 0)}%` }} />
-                  </div>
-                </div>
-                <div className="entry-score">
-                  <strong>{compactNumber(entry.tokensUsed)}</strong>
-                  <span>tokens</span>
-                </div>
-              </article>
-            ))}
-          </div>
-        </section>
+        ) : (
+          <ol className="entries">
+            {ranked.map((entry, index) => {
+              const value = category.value(entry);
+              const width = topValue > 0 ? Math.max(2, (value / topValue) * 100) : 0;
+              return (
+                <li className={index < 3 ? "entry entry-top" : "entry"} key={entry.id}>
+                  <span className="rank">{index + 1}</span>
+                  <span className="who">
+                    <span className="name">{entry.displayName}</span>
+                    <span className="handle">{entry.handle}</span>
+                  </span>
+                  <span className="meter" aria-hidden="true">
+                    <span style={{ width: `${width}%` }} />
+                  </span>
+                  <span className="score">
+                    <strong>{compactNumber(value)}</strong>
+                    <span>{category.unit}</span>
+                  </span>
+                </li>
+              );
+            })}
+          </ol>
+        )}
       </section>
+
+      <section className="how">
+        <h2>Join the board</h2>
+        <ol>
+          <li><span>1</span>Open Extensions in Kiro and install <em>Kiro Stat</em>.</li>
+          <li><span>2</span>Open the Kiro Stat panel to see your local profile.</li>
+          <li><span>3</span>Switch the profile to Public to publish a snapshot.</li>
+        </ol>
+        <p className="note">
+          Only your display name, handle, and the totals shown above are published.
+          Switch back to Private at any time to remove your entry.
+        </p>
+      </section>
+
+      <footer className="foot">
+        <span>Kiro Stat · local-first stats for Kiro</span>
+        <a href={marketplaceUrl} target="_blank" rel="noreferrer">Open VSX</a>
+      </footer>
     </main>
   );
 }

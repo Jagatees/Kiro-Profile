@@ -3,14 +3,14 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Kiro Stat Leaderboard",
-  description: "A small leaderboard for Kiro Stat profiles.",
+  description: "Global rankings for Kiro Stat profiles: tokens, credits, streaks, sessions, and active days.",
   metadataBase: new URL("https://kiro-profile-leaderboard-brown.vercel.app"),
   alternates: {
     canonical: "/"
   },
   openGraph: {
     title: "Kiro Stat Leaderboard",
-    description: "A small leaderboard for Kiro Stat profiles.",
+    description: "Global rankings for Kiro Stat profiles: tokens, credits, streaks, sessions, and active days.",
     url: "/",
     siteName: "Kiro Stat Leaderboard",
     images: [
@@ -26,7 +26,7 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
     title: "Kiro Stat Leaderboard",
-    description: "A small leaderboard for Kiro Stat profiles.",
+    description: "Global rankings for Kiro Stat profiles: tokens, credits, streaks, sessions, and active days.",
     images: ["/kiro-leaderboard-og.png"]
   },
   icons: {

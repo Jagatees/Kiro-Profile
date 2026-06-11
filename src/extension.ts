@@ -33,12 +33,18 @@ type ProfileData = {
   initials: string;
   kiroOpens30d: string;
   localSessions: string;
+  localSessionsRaw: number;
   totalTokens: string;
   totalTokensRaw: number;
   peakTokens: string;
   totalCredits: string;
+  totalCreditsRaw: number;
   currentStreak: string;
+  currentStreakRaw: number;
   longestStreak: string;
+  longestStreakRaw: number;
+  activeDays: string;
+  activeDaysRaw: number;
   heatmap: DayPoint[];
   availableYears: number[];
   insights: NamedMetric[];
@@ -288,7 +294,12 @@ class ProfileViewProvider implements vscode.WebviewViewProvider {
           publicId,
           displayName: data.displayName,
           handle: data.accountLabel || data.username,
-          tokensUsed: data.totalTokensRaw
+          tokensUsed: data.totalTokensRaw,
+          creditsUsed: data.totalCreditsRaw,
+          currentStreak: data.currentStreakRaw,
+          longestStreak: data.longestStreakRaw,
+          sessions: data.localSessionsRaw,
+          activeDays: data.activeDaysRaw
         })
       });
 
@@ -353,7 +364,12 @@ function getLeaderboardSnapshotHash(data: ProfileData): string {
     leaderboardUrl: data.leaderboardUrl,
     displayName: data.displayName,
     handle: data.accountLabel || data.username,
-    tokensUsed: data.totalTokensRaw
+    tokensUsed: data.totalTokensRaw,
+    creditsUsed: data.totalCreditsRaw,
+    currentStreak: data.currentStreakRaw,
+    longestStreak: data.longestStreakRaw,
+    sessions: data.localSessionsRaw,
+    activeDays: data.activeDaysRaw
   });
 }
 
@@ -434,6 +450,24 @@ async function collectProfileData(context: vscode.ExtensionContext): Promise<Pro
   const totalLanguageFiles = sumValues(fileStats);
   const totalModelSessions = sumValues(kiroUsage.modelCounts);
   const topModel = topModels[0];
+  const weekdayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  const weekdayTotals = new Array<number>(7).fill(0);
+  let weekendTokens = 0;
+  let totalHeatmapTokens = 0;
+  for (const point of activeCounts) {
+    const dow = new Date(`${point.date}T00:00:00`).getDay();
+    weekdayTotals[dow] += point.count;
+    totalHeatmapTokens += point.count;
+    if (dow === 0 || dow === 6) {
+      weekendTokens += point.count;
+    }
+  }
+  const busiestWeekdayIndex = weekdayTotals.indexOf(Math.max(...weekdayTotals));
+  const busiestWeekday = totalHeatmapTokens > 0 ? weekdayNames[busiestWeekdayIndex] : "N/A";
+  const weekendShare = totalHeatmapTokens > 0 ? Math.round((weekendTokens / totalHeatmapTokens) * 100) : 0;
+  const avgTokensPerActiveDay = activeCounts.length > 0
+    ? Math.round(kiroUsage.totalTokens / activeCounts.length)
+    : 0;
 
   return {
     displayName,
@@ -446,12 +480,18 @@ async function collectProfileData(context: vscode.ExtensionContext): Promise<Pro
     initials: getInitials(displayName),
     kiroOpens30d: `${kiroUsage.opensLast30Days}`,
     localSessions: `${kiroUsage.sessionCount}`,
+    localSessionsRaw: Math.max(0, kiroUsage.sessionCount),
     totalTokens: formatCompact(kiroUsage.totalTokens),
     totalTokensRaw: Math.max(0, Math.round(kiroUsage.totalTokens)),
     peakTokens: formatCompact(kiroUsage.peakDayTokens),
     totalCredits: formatCredits(kiroUsage.totalCredits),
+    totalCreditsRaw: Math.max(0, Math.round(kiroUsage.totalCredits * 100) / 100),
     currentStreak: currentStreakLabel,
+    currentStreakRaw: Math.max(0, currentStreak),
     longestStreak: longestStreakLabel,
+    longestStreakRaw: Math.max(0, longestStreak),
+    activeDays: `${activeCounts.length}`,
+    activeDaysRaw: activeCounts.length,
     heatmap,
     availableYears,
     insights: [
@@ -491,9 +531,10 @@ async function collectProfileData(context: vscode.ExtensionContext): Promise<Pro
     ],
     activityPatterns: [
       { name: "Most Active Hour", value: mostActiveHour ? `${mostActiveHour[0]}:00 (${mostActiveHour[1]} events)` : "N/A" },
+      { name: "Busiest Day", value: busiestWeekday },
+      { name: "Weekend Activity", value: `${weekendShare}%` },
       { name: "Total Active Days", value: `${activeCounts.length}` },
-      { name: "Current Streak", value: currentStreakLabel },
-      { name: "Longest Streak", value: longestStreakLabel },
+      { name: "Avg Tokens/Active Day", value: avgTokensPerActiveDay > 0 ? formatCompact(avgTokensPerActiveDay) : "N/A" },
       { name: "Avg Activity/Day", value: activeCounts.length > 0 ? `${(kiroUsage.totalTurns / activeCounts.length).toFixed(1)} turns` : "N/A" }
     ],
     toolStats: topTools.length > 0
@@ -502,7 +543,9 @@ async function collectProfileData(context: vscode.ExtensionContext): Promise<Pro
     systemStats: [
       { name: "Hooks Installed", value: `${kiroUsage.hookCount}` },
       { name: "Powers Installed", value: `${kiroUsage.powerCount}` },
-      { name: "Extensions Installed", value: `${kiroUsage.extensionCount}` }
+      { name: "Extensions Installed", value: `${kiroUsage.extensionCount}` },
+      { name: "Errors Logged", value: `${kiroUsage.errorCount}` },
+      { name: "Warnings Logged", value: `${kiroUsage.warningCount}` }
     ],
     dataSources: [
       { name: "Account Source", value: accountSource },
@@ -1807,6 +1850,7 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
     }
 
     .stats {
+      margin: 0 0 14px;
       border: 1px solid var(--line);
       border-radius: 13px;
       display: grid;
@@ -2496,6 +2540,14 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
       ${metricCard("Est. tokens", data.totalTokens, "From Kiro token log", cubeLineIcon(), "hot", "stat-tokens")}
     </section>
 
+    <section class="stats" aria-label="Profile highlights">
+      ${statBlock(data.totalCredits, "Credits used", "stat-token", "stat-credits")}
+      ${statBlock(data.currentStreak, "Current streak", "", "stat-current-streak")}
+      ${statBlock(data.longestStreak, "Longest streak", "", "stat-longest-streak")}
+      ${statBlock(data.peakTokens, "Peak token day", "stat-peak", "stat-peak-tokens")}
+      ${statBlock(data.activeDays, "Active days", "", "stat-active-days")}
+    </section>
+
     <section class="dashboard-grid">
       <div class="panel full-panel">
         <div class="panel-head">
@@ -2524,6 +2576,44 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
     <section class="bottom-grid">
       <div class="panel">
         <div class="panel-head">
+          <h2 class="panel-title">${statsIcon()} Session quality</h2>
+        </div>
+        <div class="rows" id="session-stats-list">
+          ${simpleRows(data.sessionStats)}
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head">
+          <h2 class="panel-title">${databaseIcon()} Token breakdown</h2>
+        </div>
+        <div class="rows" id="token-stats-list">
+          ${simpleRows(data.tokenStats)}
+        </div>
+      </div>
+    </section>
+
+    <section class="bottom-grid">
+      <div class="panel">
+        <div class="panel-head">
+          <h2 class="panel-title">${clockIcon()} Activity patterns</h2>
+        </div>
+        <div class="rows" id="activity-patterns-list">
+          ${simpleRows(data.activityPatterns)}
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head">
+          <h2 class="panel-title">${toolIcon()} Top tools</h2>
+        </div>
+        <div class="rows" id="tool-stats-list">
+          ${simpleRows(data.toolStats)}
+        </div>
+      </div>
+    </section>
+
+    <section class="bottom-grid">
+      <div class="panel">
+        <div class="panel-head">
           <h2 class="panel-title">${cubeLineIcon()} Most used models</h2>
         </div>
         <div class="model-list" id="models-list">
@@ -2532,10 +2622,29 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
       </div>
       <div class="panel">
         <div class="panel-head">
+          <h2 class="panel-title">${codeIcon()} Top languages</h2>
+        </div>
+        <div class="rows" id="languages-list">
+          ${topItemRows(data.topItems)}
+        </div>
+      </div>
+    </section>
+
+    <section class="bottom-grid">
+      <div class="panel">
+        <div class="panel-head">
           <h2 class="panel-title">${settingsIcon()} Kiro setup</h2>
         </div>
         <div class="rows" id="system-stats-list">
           ${simpleRows(data.systemStats)}
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head">
+          <h2 class="panel-title">${bulbIcon()} Data sources</h2>
+        </div>
+        <div class="rows" id="data-sources-list">
+          ${simpleRows(data.dataSources)}
         </div>
       </div>
     </section>
@@ -2644,6 +2753,10 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
       return '<div class="language-tile" title="' + escapeHtml(item.name + " - " + item.value) + '">' + escapeHtml(languageShortName(item.name)) + '</div>';
     }
 
+    function pluginRow(item) {
+      return '<div class="row plugin"><span class="lang-icon">' + escapeHtml(languageShortName(item.name)) + '</span><span class="plugin-name">' + escapeHtml(item.name) + '</span><span>' + escapeHtml(item.value) + '</span></div>';
+    }
+
     function iconSvg(name) {
       const icons = {
         calendar: '${calendarIcon()}',
@@ -2704,8 +2817,19 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
       setText("stat-opens", data.kiroOpens30d);
       setText("stat-sessions", data.localSessions);
       setText("stat-tokens", data.totalTokens);
+      setText("stat-credits", data.totalCredits);
+      setText("stat-current-streak", data.currentStreak);
+      setText("stat-longest-streak", data.longestStreak);
+      setText("stat-peak-tokens", data.peakTokens);
+      setText("stat-active-days", data.activeDays);
       document.getElementById("models-list").innerHTML = modelRows(data.modelItems);
+      document.getElementById("session-stats-list").innerHTML = data.sessionStats.map(insightRow).join("");
+      document.getElementById("token-stats-list").innerHTML = data.tokenStats.map(insightRow).join("");
+      document.getElementById("activity-patterns-list").innerHTML = data.activityPatterns.map(insightRow).join("");
+      document.getElementById("tool-stats-list").innerHTML = data.toolStats.map(insightRow).join("");
+      document.getElementById("languages-list").innerHTML = data.topItems.map(pluginRow).join("");
       document.getElementById("system-stats-list").innerHTML = data.systemStats.map(insightRow).join("");
+      document.getElementById("data-sources-list").innerHTML = data.dataSources.map(insightRow).join("");
       updatePublicToggle();
       updateYearOptions(data);
       renderHeatmap(yearSelect.value);
@@ -3033,6 +3157,10 @@ function insightCards(data: ProfileData): string {
 
 function topItemRow(item: NamedMetric): string {
   return `<div class="row plugin"><span class="lang-icon">${escapeHtml(languageShortName(item.name))}</span><span class="plugin-name">${escapeHtml(item.name)}</span><span>${escapeHtml(item.value)}</span></div>`;
+}
+
+function topItemRows(items: NamedMetric[]): string {
+  return items.map(topItemRow).join("");
 }
 
 function languageTiles(items: NamedMetric[]): string {

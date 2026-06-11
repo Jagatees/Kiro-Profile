@@ -6,7 +6,7 @@
 
 A Kiro IDE profile panel that shows local activity stats, optional public leaderboard sharing, and a clean share card.
 
-![Version](https://img.shields.io/badge/version-0.2.13-blue)
+![Version](https://img.shields.io/badge/version-0.3.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 ## Features
@@ -22,12 +22,21 @@ A Kiro IDE profile panel that shows local activity stats, optional public leader
 - **Local session count**
 - **Estimated token usage**
 - **Plan / quota badge** from local Kiro metadata when available
-- **Most used models**
+- **Highlights strip**: credits used, current and longest streaks, peak token day, active days
+- **Most used models** and **top workspace languages**
+
+### Deep-Dive Panels
+- **Session quality**: turns, success rate, failed turns, average duration, sub-agent calls
+- **Token breakdown**: prompt vs generated tokens, ratio, average context window
+- **Activity patterns**: most active hour, busiest day of the week, weekend share, average tokens per active day
+- **Top tools**: most frequently used tools across sessions
+- **Data sources**: transparency panel showing exactly where each stat comes from
 
 ### Kiro Setup
 - **Hooks installed**
 - **Powers installed**
 - **Extensions installed**
+- **Errors and warnings logged**
 
 ### AI Model Analytics
 - Most-used AI models ranked by turn count
@@ -37,8 +46,9 @@ A Kiro IDE profile panel that shows local activity stats, optional public leader
 ### Public Leaderboard
 - Toggle the profile between **Private** and **Public**
 - Public mode sends a small snapshot to the hosted leaderboard
+- The website ranks builders across categories: **tokens, credits, current streak, best streak, sessions, and active days**
 - Private mode removes the public leaderboard entry
-- Syncs when the token snapshot changes, or at least once every 24 hours while the profile view is active
+- Syncs when the snapshot changes, or at least once every 24 hours while the profile view is active
 
 ### Profile Customization
 Configure your profile display through VS Code settings:
@@ -55,7 +65,7 @@ Configure your profile display through VS Code settings:
 ### Privacy-First Defaults
 - Local profile data stays private unless you turn on Public
 - Data sourced from local git history and Kiro session files
-- Public leaderboard sync sends only a generated public ID, display name, handle/account label, and token total
+- Public leaderboard sync sends only a generated public ID, display name, handle/account label, and aggregate totals (tokens, credits, streaks, sessions, active days)
 - Raw Kiro account ARNs are not displayed or sent
 
 ## Installation
@@ -184,7 +194,6 @@ The extension collects activity data from multiple local sources:
 
 - **Current Streak**: Consecutive days with activity ending today
 - **Longest Streak**: Maximum consecutive active days in history
-- Minimum streak displayed is 3 days for new users
 
 ## Development
 
@@ -266,7 +275,7 @@ Contributions are welcome! Areas for improvement:
 - **Private by default**: No leaderboard sync happens unless you turn on Public
 - **Local data only**: Reads only from local git, Kiro config, and session files
 - **No tracking or telemetry**: Zero analytics or external reporting
-- **Minimal public payload**: Public sync sends a generated public ID, display name, handle/account label, and token total
+- **Minimal public payload**: Public sync sends a generated public ID, display name, handle/account label, and aggregate totals only
 - **Transparent operation**: All data sources documented and auditable
 
 ## Troubleshooting
@@ -296,6 +305,15 @@ Contributions are welcome! Areas for improvement:
 MIT License - see [LICENSE](LICENSE) file for details
 
 ## Changelog
+
+### 0.3.0
+
+- Added a highlights strip to the profile panel: credits, current/longest streak, peak token day, active days.
+- Wired previously hidden stats into the panel: session quality, token breakdown, activity patterns, top tools, top languages, and data sources.
+- New activity insights: busiest day of the week, weekend activity share, and average tokens per active day.
+- Kiro setup panel now shows errors and warnings logged.
+- Leaderboard sync now publishes credits, streaks, sessions, and active days so the website can rank multiple categories.
+- Redesigned the leaderboard website with a minimalist look and category tabs (tokens, credits, streak, best streak, sessions, active days).
 
 ### 0.2.13
 
