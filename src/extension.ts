@@ -1663,7 +1663,7 @@ function formatBytes(bytes: number): string {
   return `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
 
-function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data: ProfileData): string {
+export function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data: ProfileData): string {
   const nonce = getNonce();
   const cspSource = webview.cspSource;
   const encoded = JSON.stringify(data).replace(/</g, "\\u003c");
@@ -1676,21 +1676,20 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Kiro Stat</title>
   <style nonce="${nonce}">
+
     :root {
-      color-scheme: dark;
-      --bg: #0d0b14;
-      --panel: #15111f;
-      --panel-soft: #21192e;
-      --line: #342945;
-      --text: #f4f4f4;
-      --muted: #b7adc7;
-      --faint: #7e718f;
-      --kiro-purple: #6f45ff;
-      --kiro-purple-2: #a557ff;
-      --kiro-pink: #ef6edb;
-      --kiro-blue: #5aa8ff;
-      --kiro-glow: rgba(165, 87, 255, 0.34);
-      --token-gradient: linear-gradient(135deg, #4b2cff 0%, #9d4dff 48%, #ef6edb 100%);
+      color-scheme: light;
+      --cream: #faf3e3;
+      --ink: #111111;
+      --muted: #555555;
+      --pink: #ff6bb3;
+      --pink-soft: #ffb1d8;
+      --lime: #a8e84a;
+      --blue: #3360ff;
+      --yellow: #ffd63d;
+      --white: #ffffff;
+      --shadow: 3px 3px 0 var(--ink);
+      --shadow-big: 4px 4px 0 var(--ink);
     }
 
     * {
@@ -1699,11 +1698,8 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
 
     body {
       margin: 0;
-      background:
-        radial-gradient(circle at 50% -12%, rgba(165, 87, 255, 0.24), transparent 34%),
-        radial-gradient(circle at 100% 8%, rgba(90, 168, 255, 0.12), transparent 24%),
-        linear-gradient(180deg, #171123 0%, var(--bg) 30%);
-      color: var(--text);
+      background: var(--cream);
+      color: var(--ink);
       font-family: var(--vscode-font-family, "Segoe UI", sans-serif);
       font-size: var(--vscode-font-size, 13px);
     }
@@ -1711,65 +1707,14 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
     button {
       color: inherit;
       font: inherit;
+      cursor: pointer;
     }
 
     .shell {
       min-width: 420px;
       max-width: 920px;
       margin: 0 auto;
-      padding: 24px 28px 34px;
-    }
-
-    .topbar {
-      border-top: 1px solid rgba(255, 255, 255, 0.08);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      min-height: 50px;
-    }
-
-    .title {
-      font-size: 14px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-    }
-
-    .actions {
-      display: flex;
-      gap: 16px;
-      align-items: center;
-      color: var(--text);
-    }
-
-    .action {
-      border: 0;
-      background: transparent;
-      padding: 4px 0;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      cursor: pointer;
-      border-radius: 6px;
-    }
-
-    .action:hover {
-      color: var(--kiro-pink);
-    }
-
-    .action svg {
-      width: 14px;
-      height: 14px;
-    }
-
-    .action.is-loading svg {
-      animation: spin 0.9s linear infinite;
-    }
-
-    .refresh-status {
-      min-width: 48px;
-      color: var(--muted);
-      font-size: 12px;
+      padding: 26px 22px 34px;
     }
 
     @keyframes spin {
@@ -1778,184 +1723,407 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
       }
     }
 
-    .hero {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 48px 0 36px;
-      text-align: center;
+    @keyframes bob {
+      0%, 100% { transform: translateY(0) rotate(-2deg); }
+      50% { transform: translateY(-6px) rotate(3deg); }
     }
 
-    .avatar-wrap {
+    .refresh-status {
+      min-width: 48px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .action.is-loading svg {
+      animation: spin 0.9s linear infinite;
+    }
+
+    /* ---------- header ---------- */
+
+    .app-header {
       position: relative;
-      width: 92px;
-      height: 92px;
-      margin-bottom: 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 18px;
+      margin: 14px 0 26px;
+      border: 3px solid var(--ink);
+      border-radius: 14px;
+      background: var(--white);
+      box-shadow: var(--shadow-big);
+      padding: 14px 16px;
+    }
+
+    .header-ghost {
+      position: absolute;
+      top: -34px;
+      right: 18px;
+      width: 46px;
+      pointer-events: none;
+    }
+
+    .header-ghost svg {
+      width: 100%;
+      display: block;
+      animation: bob 2.8s ease-in-out infinite;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .header-ghost svg {
+        animation: none;
+      }
+    }
+
+    .profile-line {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      min-width: 0;
     }
 
     .avatar {
-      width: 80px;
-      height: 80px;
-      border-radius: 999px;
+      width: 56px;
+      height: 56px;
+      flex: 0 0 auto;
+      border-radius: 14px;
       display: grid;
       place-items: center;
-      background: var(--token-gradient);
-      color: white;
-      font-size: 28px;
-      font-weight: 500;
+      border: 3px solid var(--ink);
+      background: var(--pink-soft);
+      color: var(--ink);
+      font-size: 20px;
+      font-weight: 900;
+      box-shadow: var(--shadow);
     }
 
-    .spark {
-      position: absolute;
-      right: 2px;
-      bottom: 6px;
-      width: 32px;
-      height: 32px;
-      border-radius: 10px;
+    .profile-meta {
       display: grid;
-      place-items: center;
-      background: linear-gradient(135deg, #7447ff, #ef6edb 62%, #5aa8ff);
-      box-shadow: 0 0 0 3px var(--bg);
+      gap: 3px;
     }
 
-    .spark svg {
-      width: 21px;
-      height: 21px;
-    }
-
-    .name {
-      margin: 0 0 6px;
-      font-size: 24px;
-      line-height: 1.2;
-      font-weight: 500;
-      letter-spacing: 0;
+    .profile-meta .name {
+      margin: 0;
+      font-size: 20px;
+      line-height: 1.15;
+      font-weight: 900;
+      letter-spacing: 0.01em;
     }
 
     .handle {
       display: flex;
       gap: 8px;
       align-items: center;
-      justify-content: center;
       color: var(--muted);
       white-space: nowrap;
+      font-weight: 600;
     }
 
     .badge {
-      border: 1px solid var(--line);
-      background: var(--panel-soft);
-      color: #cfcfcf;
+      border: 2px solid var(--ink);
+      background: var(--yellow);
+      color: var(--ink);
       border-radius: 7px;
-      padding: 2px 7px;
-      font-size: 12px;
+      padding: 2px 8px;
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
     }
+
+    .header-actions {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 8px;
+    }
+
+    .sync-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .action,
+    .public-toggle {
+      border: 2.5px solid var(--ink);
+      border-radius: 9px;
+      background: var(--white);
+      color: var(--ink);
+      padding: 7px 10px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      font-weight: 700;
+      box-shadow: var(--shadow);
+      transition: transform 0.08s ease, box-shadow 0.08s ease;
+    }
+
+    .action:hover,
+    .public-toggle:hover {
+      transform: translate(-1px, -1px);
+      box-shadow: 4px 4px 0 var(--ink);
+    }
+
+    .action:active,
+    .public-toggle:active {
+      transform: translate(2px, 2px);
+      box-shadow: 1px 1px 0 var(--ink);
+    }
+
+    .action svg {
+      width: 14px;
+      height: 14px;
+    }
+
+    .sync-button {
+      background: var(--blue);
+      color: var(--white);
+    }
+
+    .public-toggle {
+      min-width: 104px;
+      min-height: 36px;
+    }
+
+    .public-toggle #public-toggle-icon {
+      width: 16px;
+      height: 16px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .public-toggle #public-toggle-icon svg {
+      width: 15px;
+      height: 15px;
+    }
+
+    .public-toggle.is-public {
+      background: var(--lime);
+    }
+
+    .sync-subtext {
+      font-size: 11px;
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    .status-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      border: 2px solid var(--ink);
+      background: var(--lime);
+      margin-left: 6px;
+    }
+
+    /* ---------- metric cards ---------- */
+
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+      margin: 18px 0;
+    }
+
+    .metric-card {
+      position: relative;
+      min-height: 130px;
+      border: 3px solid var(--ink);
+      border-radius: 12px;
+      background: var(--white);
+      padding: 14px;
+      overflow: hidden;
+      box-shadow: var(--shadow-big);
+    }
+
+    .metric-card.hot {
+      background: var(--yellow);
+    }
+
+    .metric-card.soft {
+      background: var(--pink-soft);
+    }
+
+    .metric-label {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      color: var(--ink);
+      font-size: 13px;
+      line-height: 1.15;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+    }
+
+    .metric-icon {
+      width: 18px;
+      height: 18px;
+      color: var(--ink);
+    }
+
+    .metric-value {
+      margin-top: 20px;
+      font-size: 36px;
+      line-height: 1;
+      font-weight: 900;
+      color: var(--ink);
+    }
+
+    .metric-sub {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.2;
+      font-weight: 600;
+    }
+
+    .metric-up {
+      color: #1d7a2c;
+    }
+
+    /* ---------- highlight strip ---------- */
 
     .stats {
       margin: 0 0 14px;
-      border: 1px solid var(--line);
-      border-radius: 13px;
+      border: 3px solid var(--ink);
+      border-radius: 12px;
       display: grid;
       grid-template-columns: repeat(5, minmax(0, 1fr));
       overflow: hidden;
-      background: #151515;
-      background: linear-gradient(180deg, rgba(33, 25, 46, 0.96), rgba(17, 13, 26, 0.96));
-      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.26), 0 0 0 1px rgba(165, 87, 255, 0.08);
+      background: var(--white);
+      box-shadow: var(--shadow-big);
     }
 
     .stat {
-      padding: 14px 12px 12px;
+      padding: 13px 10px 11px;
       text-align: center;
       min-width: 0;
-      position: relative;
-    }
-
-    .stat-token {
-      background: var(--token-gradient);
-      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.13), 0 0 24px rgba(165, 87, 255, 0.18);
-    }
-
-    .stat-token .stat-label,
-    .stat-token .stat-value {
-      color: white;
-      text-shadow: 0 1px 12px rgba(0, 0, 0, 0.25);
-    }
-
-    .stat-peak {
-      background: linear-gradient(135deg, rgba(111, 69, 255, 0.22), rgba(239, 110, 219, 0.13));
     }
 
     .stat + .stat {
-      border-left: 1px solid rgba(255, 255, 255, 0.07);
+      border-left: 2.5px solid var(--ink);
+    }
+
+    .stat-token {
+      background: var(--pink);
+    }
+
+    .stat-peak {
+      background: var(--lime);
     }
 
     .stat-value {
-      font-size: 13px;
-      color: white;
-      margin-bottom: 5px;
+      font-size: 15px;
+      font-weight: 900;
+      color: var(--ink);
+      margin-bottom: 4px;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
 
     .stat-label {
-      color: #b8b8b8;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
       line-height: 1.25;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
 
-    .section {
-      margin-top: 44px;
+    .stat-token .stat-label {
+      color: rgba(17, 17, 17, 0.72);
     }
 
-    .section-head {
+    /* ---------- panels ---------- */
+
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 14px;
+      margin-top: 14px;
+    }
+
+    .panel {
+      border: 3px solid var(--ink);
+      border-radius: 12px;
+      background: var(--white);
+      padding: 14px;
+      box-shadow: var(--shadow-big);
+    }
+
+    .panel-head {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-bottom: 12px;
+      gap: 12px;
+      margin-bottom: 14px;
     }
 
-    .section-title {
+    .panel-title {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
       margin: 0;
-      font-size: 14px;
-      font-weight: 700;
+      font-size: 13px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+      border: 2.5px solid var(--ink);
+      border-radius: 8px;
+      background: var(--pink);
+      padding: 5px 10px;
+      box-shadow: 2px 2px 0 var(--ink);
     }
 
-    .tabs {
-      display: flex;
-      gap: 6px;
-      color: var(--muted);
+    .panel-title svg {
+      width: 15px;
+      height: 15px;
+      color: var(--ink);
     }
 
     .activity-controls {
       display: flex;
       align-items: center;
       gap: 8px;
-      color: var(--muted);
-    }
-
-    .tab {
-      border: 0;
-      background: transparent;
-      border-radius: 6px;
-      color: var(--muted);
-      cursor: pointer;
-      padding: 3px 6px;
-    }
-
-    .tab-active {
-      background: rgba(165, 87, 255, 0.17);
-      color: #f0dfff;
     }
 
     .year-select {
       min-width: 82px;
-      border: 1px solid var(--line);
-      border-radius: 7px;
-      background: var(--panel-soft);
-      color: var(--text);
-      padding: 3px 8px;
+      border: 2.5px solid var(--ink);
+      border-radius: 8px;
+      background: var(--white);
+      color: var(--ink);
+      padding: 4px 8px;
       font: inherit;
+      font-weight: 700;
+      box-shadow: 2px 2px 0 var(--ink);
+    }
+
+    /* ---------- heatmap ---------- */
+
+    .weekday-grid {
+      display: grid;
+      grid-template-columns: 28px 1fr;
+      gap: 8px;
+    }
+
+    .weekday-labels {
+      display: grid;
+      grid-template-rows: repeat(7, 11px);
+      gap: 4px;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 700;
+    }
+
+    .weekday-labels span:nth-child(even) {
+      visibility: hidden;
     }
 
     .heatmap-wrap {
@@ -1976,13 +2144,13 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
       width: 11px;
       height: 11px;
       border-radius: 3px;
-      background: #202020;
+      background: #ece2cb;
     }
 
-    .level-1 { background: #302644; }
-    .level-2 { background: #53358f; }
-    .level-3 { background: #7a49d8; }
-    .level-4 { background: #ef6edb; box-shadow: 0 0 10px rgba(239, 110, 219, 0.45); }
+    .level-1 { background: var(--lime); }
+    .level-2 { background: var(--yellow); }
+    .level-3 { background: var(--pink); }
+    .level-4 { background: var(--blue); }
 
     .months {
       position: relative;
@@ -1990,6 +2158,7 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
       margin-bottom: 6px;
       color: var(--muted);
       font-size: 11px;
+      font-weight: 700;
       min-width: max-content;
     }
 
@@ -1999,320 +2168,6 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
       white-space: nowrap;
     }
 
-    .lower {
-      margin-top: 42px;
-      display: grid;
-      grid-template-columns: 1fr 1.08fr;
-      gap: 58px;
-    }
-
-    .lower-three {
-      grid-template-columns: 1fr 1fr 1fr;
-      gap: 34px;
-    }
-
-    .rows {
-      display: grid;
-      gap: 16px;
-      margin-top: 18px;
-    }
-
-    .row {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      gap: 18px;
-      align-items: center;
-      color: var(--muted);
-      min-width: 0;
-    }
-
-    .row strong {
-      color: white;
-      font-weight: 500;
-      white-space: nowrap;
-    }
-
-    .plugin {
-      grid-template-columns: 24px minmax(0, 1fr) auto;
-      gap: 10px;
-    }
-
-    .lang-icon {
-      width: 20px;
-      height: 20px;
-      border-radius: 7px;
-      display: grid;
-      place-items: center;
-      background: linear-gradient(135deg, rgba(111, 69, 255, 0.85), rgba(239, 110, 219, 0.7));
-      color: white;
-      font-size: 9px;
-      font-weight: 800;
-    }
-
-    .model-icon {
-      background: linear-gradient(135deg, #5a35ff, #a557ff 58%, #5aa8ff);
-      color: white;
-    }
-
-    .plugin-name {
-      color: white;
-      font-weight: 600;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .app-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 24px;
-      margin: 18px 0 26px;
-    }
-
-    .profile-line {
-      display: flex;
-      align-items: center;
-      gap: 16px;
-      min-width: 0;
-    }
-
-    .profile-line .avatar {
-      width: 72px;
-      height: 72px;
-      flex: 0 0 auto;
-      font-size: 24px;
-      box-shadow: 0 0 30px rgba(165, 87, 255, 0.36);
-    }
-
-    .profile-meta {
-      display: grid;
-      gap: 3px;
-    }
-
-    .profile-meta .name {
-      margin: 0;
-      font-size: 22px;
-      line-height: 1.15;
-      font-weight: 760;
-    }
-
-    .header-actions {
-      display: flex;
-      flex-direction: column;
-      align-items: flex-end;
-      gap: 8px;
-    }
-
-    .sync-row {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-
-    .sync-button {
-      border: 1px solid rgba(255, 255, 255, 0.14);
-      border-radius: 999px;
-      background: rgba(255, 255, 255, 0.045);
-      padding: 8px 14px;
-      box-shadow: 0 12px 28px rgba(0, 0, 0, 0.2);
-    }
-
-    .leaderboard-button {
-      border: 0;
-      background: transparent;
-      padding: 8px;
-      color: var(--muted);
-    }
-
-    .public-toggle {
-      border: 1px solid rgba(255, 255, 255, 0.14);
-      border-radius: 999px;
-      background: rgba(255, 255, 255, 0.055);
-      color: #cfc7df;
-      min-width: 116px;
-      min-height: 38px;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 7px;
-      padding: 8px 14px;
-      box-shadow: 0 12px 28px rgba(0, 0, 0, 0.16);
-      cursor: pointer;
-    }
-
-    .public-toggle #public-toggle-icon {
-      width: 18px;
-      height: 18px;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      border-radius: 999px;
-      background: rgba(255, 255, 255, 0.08);
-    }
-
-    .public-toggle #public-toggle-icon svg {
-      width: 15px;
-      height: 15px;
-    }
-
-    .public-toggle.is-public {
-      border-color: rgba(94, 234, 212, 0.58);
-      background: linear-gradient(135deg, rgba(94, 234, 212, 0.22), rgba(165, 87, 255, 0.28));
-      color: #d8fff7;
-    }
-
-    .share-button {
-      border: 0;
-      background: transparent;
-      padding: 8px;
-      color: var(--muted);
-    }
-
-    .sync-subtext {
-      font-size: 11px;
-      color: var(--muted);
-    }
-
-    .status-dot {
-      display: inline-block;
-      width: 6px;
-      height: 6px;
-      border-radius: 999px;
-      background: #66e58d;
-      margin-left: 6px;
-      box-shadow: 0 0 10px rgba(102, 229, 141, 0.75);
-    }
-
-    .metric-grid {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 16px;
-      margin: 18px 0 18px;
-    }
-
-    .metric-card {
-      position: relative;
-      min-height: 150px;
-      border: 1px solid rgba(255, 255, 255, 0.09);
-      border-radius: 8px;
-      background: linear-gradient(180deg, rgba(20, 23, 34, 0.9), rgba(12, 14, 22, 0.94));
-      padding: 18px;
-      overflow: hidden;
-      box-shadow: 0 14px 32px rgba(0, 0, 0, 0.24);
-    }
-
-    .metric-card.hot {
-      background: var(--token-gradient);
-      border-color: rgba(255, 255, 255, 0.34);
-      box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.14), 0 18px 52px rgba(239, 110, 219, 0.34);
-    }
-
-    .metric-card.soft {
-      background: linear-gradient(180deg, rgba(31, 26, 48, 0.92), rgba(14, 17, 26, 0.94));
-    }
-
-    .metric-label {
-      display: flex;
-      justify-content: space-between;
-      gap: 8px;
-      color: #d8d1e8;
-      font-size: 15px;
-      line-height: 1.15;
-      font-weight: 700;
-    }
-
-    .metric-icon {
-      width: 18px;
-      height: 18px;
-      color: #b884ff;
-    }
-
-    .metric-card.hot .metric-icon,
-    .metric-card.hot .metric-label,
-    .metric-card.hot .metric-sub {
-      color: white;
-    }
-
-    .metric-value {
-      margin-top: 26px;
-      font-size: 42px;
-      line-height: 1;
-      font-weight: 780;
-      color: #b681ff;
-    }
-
-    .metric-card.hot .metric-value {
-      color: white;
-    }
-
-    .metric-sub {
-      margin-top: 8px;
-      color: var(--muted);
-      font-size: 13px;
-      line-height: 1.2;
-    }
-
-    .metric-up {
-      color: #73f1a2;
-    }
-
-    .dashboard-grid {
-      display: grid;
-      grid-template-columns: 1.1fr 0.9fr;
-      gap: 12px;
-      margin-top: 14px;
-    }
-
-    .panel {
-      border: 1px solid rgba(255, 255, 255, 0.09);
-      border-radius: 8px;
-      background: linear-gradient(180deg, rgba(15, 18, 29, 0.92), rgba(10, 12, 20, 0.96));
-      padding: 14px;
-      box-shadow: 0 14px 32px rgba(0, 0, 0, 0.22);
-    }
-
-    .panel-head {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      margin-bottom: 14px;
-    }
-
-    .panel-title {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      margin: 0;
-      font-size: 14px;
-      font-weight: 760;
-    }
-
-    .panel-title svg {
-      width: 17px;
-      height: 17px;
-      color: var(--kiro-pink);
-    }
-
-    .weekday-grid {
-      display: grid;
-      grid-template-columns: 28px 1fr;
-      gap: 8px;
-    }
-
-    .weekday-labels {
-      display: grid;
-      grid-template-rows: repeat(7, 11px);
-      gap: 4px;
-      color: var(--muted);
-      font-size: 10px;
-    }
-
-    .weekday-labels span:nth-child(even) {
-      visibility: hidden;
-    }
-
     .activity-legend {
       display: flex;
       align-items: center;
@@ -2320,6 +2175,7 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
       margin: 18px 0 4px 28px;
       color: var(--muted);
       font-size: 11px;
+      font-weight: 600;
     }
 
     .legend-cells {
@@ -2331,76 +2187,69 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
       display: block;
     }
 
-    .insight-cards {
-      display: grid;
-      gap: 8px;
-    }
-
-    .insight-card {
-      display: grid;
-      grid-template-columns: 28px minmax(0, 1fr) 16px;
-      align-items: center;
-      gap: 10px;
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      border-radius: 7px;
-      background: rgba(255, 255, 255, 0.035);
-      padding: 10px;
-    }
-
-    .insight-icon {
-      color: #b884ff;
-    }
-
-    .insight-copy strong {
-      display: block;
-      color: var(--text);
-      font-weight: 680;
-      margin-bottom: 2px;
-    }
-
-    .insight-copy span {
-      color: var(--muted);
-      font-size: 12px;
-    }
-
-    .chev {
-      color: var(--muted);
-    }
+    /* ---------- rows / lists ---------- */
 
     .bottom-grid {
       display: grid;
-      grid-template-columns: 0.92fr 1fr;
-      gap: 12px;
-      margin-top: 12px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 14px;
     }
 
     .full-panel {
-      margin-top: 12px;
+      margin-top: 0;
     }
 
-    .dense-rows {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 12px 18px;
-    }
-
-    .language-tiles {
+    .rows {
       display: grid;
-      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 14px;
+      align-items: center;
+      color: var(--muted);
+      font-weight: 600;
+      min-width: 0;
+    }
+
+    .row strong {
+      color: var(--ink);
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .plugin {
+      grid-template-columns: 24px minmax(0, 1fr) auto;
       gap: 10px;
     }
 
-    .language-tile {
-      aspect-ratio: 1;
-      min-width: 0;
-      border: 1px solid rgba(255, 255, 255, 0.11);
+    .lang-icon {
+      width: 22px;
+      height: 22px;
       border-radius: 7px;
       display: grid;
       place-items: center;
-      background: rgba(255, 255, 255, 0.045);
-      color: #fff;
-      font-size: 20px;
-      font-weight: 840;
-      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+      border: 2px solid var(--ink);
+      background: var(--yellow);
+      color: var(--ink);
+      font-size: 9px;
+      font-weight: 900;
+    }
+
+    .model-icon {
+      background: var(--blue);
+      color: var(--white);
+    }
+
+    .plugin-name {
+      color: var(--ink);
+      font-weight: 800;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     .model-list {
@@ -2424,7 +2273,8 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
     }
 
     .model-name {
-      color: var(--text);
+      color: var(--ink);
+      font-weight: 800;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -2433,31 +2283,32 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
     .model-detail {
       color: var(--muted);
       font-size: 11px;
+      font-weight: 600;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
 
+    /* ---------- responsive ---------- */
+
     @media (max-width: 620px) {
       .shell {
         min-width: 0;
-        padding: 18px 16px 28px;
+        padding: 22px 14px 28px;
       }
 
-      .actions {
-        gap: 10px;
+      .app-header {
+        flex-direction: column;
+        align-items: flex-start;
       }
 
-      .action span {
-        display: none;
+      .header-actions {
+        align-items: flex-start;
       }
 
-      .public-toggle span {
-        display: inline-flex;
-      }
-
-      .hero {
-        padding-top: 34px;
+      .metric-grid,
+      .bottom-grid {
+        grid-template-columns: 1fr;
       }
 
       .stats {
@@ -2469,38 +2320,12 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
       }
 
       .stat {
-        border-top: 1px solid #242424;
+        border-top: 2.5px solid var(--ink);
       }
 
       .stat:first-child,
       .stat:nth-child(2) {
         border-top: 0;
-      }
-
-      .lower {
-        grid-template-columns: 1fr;
-        gap: 38px;
-      }
-
-      .lower-three {
-        grid-template-columns: 1fr;
-      }
-
-      .app-header {
-        flex-direction: column;
-        align-items: flex-start;
-      }
-
-      .header-actions {
-        align-items: flex-start;
-        padding-top: 0;
-      }
-
-      .metric-grid,
-      .dashboard-grid,
-      .bottom-grid,
-      .dense-rows {
-        grid-template-columns: 1fr;
       }
 
       .heatmap {
@@ -2512,6 +2337,7 @@ function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data:
 <body>
   <main class="shell">
     <header class="app-header">
+      <span class="header-ghost" aria-hidden="true">${ghostIcon()}</span>
       <div class="profile-line">
         <div class="avatar" id="profile-initials">${escapeHtml(data.initials)}</div>
         <div class="profile-meta">
@@ -3195,6 +3021,10 @@ function getNonce(): string {
     text += possible.charAt(Math.floor(Math.random() * possible.length));
   }
   return text;
+}
+
+function ghostIcon(): string {
+  return `<svg viewBox="0 0 100 112" fill="none" aria-hidden="true"><path d="M50 6C27 6 13 24 13 48v46q0 7 5.5 3.5l8.5-5.5q3-2 6 0l8.5 6q4.5 3 9 0l8.5-6q3-2 6 0l8.5 5.5Q87 101 87 94V48C87 24 73 6 50 6Z" fill="#fff" stroke="#111" stroke-width="5" stroke-linejoin="round"/><ellipse cx="38" cy="47" rx="5.5" ry="8.5" fill="#111"/><ellipse cx="62" cy="47" rx="5.5" ry="8.5" fill="#111"/></svg>`;
 }
 
 function shareIcon(): string {
