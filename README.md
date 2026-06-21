@@ -12,12 +12,14 @@ A Kiro IDE profile panel that shows local activity stats, optional public leader
 ## Features
 
 ### Activity Heatmap
+
 - **GitHub-style contribution graph** showing your daily activity
 - Tracks git commits and Kiro session usage
 - Multi-year view with year selector
 - Visual intensity levels based on token usage and commits
 
 ### Profile Metrics
+
 - **Kiro launches** in the last 30 days
 - **Local session count**
 - **Estimated token usage**
@@ -26,6 +28,7 @@ A Kiro IDE profile panel that shows local activity stats, optional public leader
 - **Most used models** and **top workspace languages**
 
 ### Deep-Dive Panels
+
 - **Session quality**: turns, success rate, failed turns, average duration, sub-agent calls
 - **Token breakdown**: prompt vs generated tokens, ratio, average context window
 - **Activity patterns**: most active hour, busiest day of the week, weekend share, average tokens per active day
@@ -33,17 +36,20 @@ A Kiro IDE profile panel that shows local activity stats, optional public leader
 - **Data sources**: transparency panel showing exactly where each stat comes from
 
 ### Kiro Setup
+
 - **Hooks installed**
 - **Powers installed**
 - **Extensions installed**
 - **Errors and warnings logged**
 
 ### AI Model Analytics
+
 - Most-used AI models ranked by turn count
 - Model usage statistics from session history
 - Tracks all model interactions automatically
 
 ### Public Leaderboard
+
 - Toggle the profile between **Private** and **Public**
 - Public mode sends a small snapshot to the hosted leaderboard
 - The website ranks builders across categories: **tokens, credits, current streak, best streak, sessions, and active days**
@@ -51,22 +57,29 @@ A Kiro IDE profile panel that shows local activity stats, optional public leader
 - Syncs when the snapshot changes, or at least once every 24 hours while the profile view is active
 
 ### Profile Customization
+
 Configure your profile display through VS Code settings:
+
 - **Display Name**: Your full name shown on the profile card
 - **Username**: Handle displayed below your name
 - **Plan Label**: Badge shown next to username (e.g., "Local", "Pro")
 - **Leaderboard URL**: Website endpoint for public profile sync
 
 ### Share Card Generator
+
 - Export your profile as a shareable PNG image
 - Saved to `kiro-profile-shares/` in your workspace
 - Perfect for showcasing your development activity
 
 ### Privacy-First Defaults
+
 - Local profile data stays private unless you turn on Public
 - Data sourced from local git history and Kiro session files
 - Public leaderboard sync sends only a generated public ID, display name, handle/account label, and aggregate totals (tokens, credits, streaks, sessions, active days)
 - Raw Kiro account ARNs are not displayed or sent
+- Publishing requires confirmation, production URLs require HTTPS, and requests time out after nine seconds
+
+Read the complete [privacy model](docs/privacy.md) before enabling public mode.
 
 ## Installation
 
@@ -114,6 +127,7 @@ This generates a `.vsix` file you can install in Kiro.
 **Method 1**: Click the **Kiro Stat** icon in the activity bar (left sidebar)
 
 **Method 2**: Use Command Palette
+
 - Press `Ctrl+Shift+P` (Windows/Linux) or `Cmd+Shift+P` (Mac)
 - Run "Kiro Stat: Open Stats"
 
@@ -151,35 +165,42 @@ Click the refresh button in the panel header or run "Kiro Stat: Refresh Stats" f
 The extension collects activity data from multiple local sources:
 
 **Git History**
+
 - Parses git log for the last 365 days
 - Extracts commit dates to build activity timeline
 - Uses `git log --date=short --pretty=format:%ad --all --since="365 days ago"`
 
 **Kiro Session Files**
+
 - Reads session JSON files from `~/.kiro/sessions/`
 - Extracts token counts, credits, model usage, and timestamps
 - Estimates metrics from session file sizes when exact data unavailable
 
 **Workspace Sessions**
+
 - Scans `%APPDATA%/Kiro/User/globalStorage/` for session data
 - Reads workspace session indexes and session detail files
 
 **Token Generation Logs**
+
 - Reads `dev_data/tokens_generated.jsonl` for detailed token metrics
 - Uses token rows when date information is available from surrounding sessions
 
 **Kiro Application Logs**
+
 - Scans log directories in `%APPDATA%/Kiro/logs/` (Windows)
 - Counts Kiro launches in the last 30 days
 - No sensitive log content is parsed; launch counts come from timestamped directory names
 
 **Kiro Local Account**
+
 - Reads `User/globalStorage/kiro.kiroagent/profile.json`
 - Uses the safe account label, such as `BuilderId`
 - Uses ARN presence only as signed-in evidence
 - Does not show or submit raw ARN values
 
 **Kiro Configuration**
+
 - Counts installed hooks from `~/.kiro/hooks/`
 - Counts installed powers from `~/.kiro/powers/`
 - Counts extensions from `~/.kiro/extensions/`
@@ -197,6 +218,8 @@ The extension collects activity data from multiple local sources:
 
 ## Development
 
+Run the complete release gate with `npm ci` followed by `npm run validate`.
+
 ### Project Structure
 
 ```
@@ -213,17 +236,20 @@ kiro-stat/
 ### Key Components
 
 **ProfileViewProvider**
+
 - Implements `WebviewViewProvider` interface
 - Manages webview lifecycle and message handling
 - Handles refresh and share card operations
 
 **collectProfileData()**
+
 - Main data aggregation function
 - Combines git, session, workspace, and config data
 - Computes comprehensive statistics including success rates, activity patterns, and tool usage
 - Returns structured `ProfileData` object
 
 **getKiroUsage()**
+
 - Parses Kiro session files and logs
 - Extracts token usage (prompt, generated, total), model counts, credits
 - Calculates session metrics, durations, and success rates
@@ -231,6 +257,7 @@ kiro-stat/
 - Analyzes hourly activity patterns and streaks
 
 **getWorkspaceFileStats()**
+
 - Walks workspace directory tree (max depth 8)
 - Counts files by programming language
 - Skips common ignore directories
@@ -239,10 +266,10 @@ kiro-stat/
 
 ```json
 {
-  "compile": "tsc -p ./",           // Compile TypeScript to JavaScript
-  "watch": "tsc -watch -p ./",       // Compile with watch mode
-  "check": "tsc --noEmit -p ./",     // Type-check without output
-  "package": "vsce package --allow-missing-repository"  // Create .vsix
+  "compile": "tsc -p ./", // Compile TypeScript to JavaScript
+  "watch": "tsc -watch -p ./", // Compile with watch mode
+  "check": "tsc --noEmit -p ./", // Type-check without output
+  "package": "vsce package --allow-missing-repository" // Create .vsix
 }
 ```
 
@@ -256,6 +283,8 @@ Contributions are welcome! Areas for improvement:
 - **Export formats**: JSON, CSV, or PDF report generation
 - **Themes**: Light mode support and color customization
 - **Cross-platform**: Improve macOS and Linux path handling
+
+See [Contributing](CONTRIBUTING.md), [Architecture](docs/architecture.md), [Troubleshooting](docs/troubleshooting.md), [Security](SECURITY.md), and the [Release checklist](docs/release-checklist.md).
 
 ## Requirements
 
@@ -281,21 +310,25 @@ Contributions are welcome! Areas for improvement:
 ## Troubleshooting
 
 **Activity heatmap is empty**
+
 - Verify git repository exists with commit history
 - Check that Kiro session files exist locally
 - Try clicking the refresh button
 
 **Leaderboard does not update**
+
 - Confirm the profile toggle is set to Public
 - Check `kiroStat.leaderboardUrl`
 - Click refresh to force the profile view to collect the latest local data
 
 **Share card not saving**
+
 - Check workspace folder is open (default save location)
 - Ensure write permissions for workspace directory
 - Look for saved images in `kiro-profile-shares/` folder
 
 **Extension not activating**
+
 - Confirm extension is installed and enabled
 - Check Kiro compatibility version (^1.92.0)
 - Reload window (Command Palette > "Developer: Reload Window")
@@ -324,6 +357,7 @@ MIT License - see [LICENSE](LICENSE) file for details
 - Updated the activity bar icon to a clearer analytics chart mark.
 
 ### 0.2.11
+
 - Current stable release
 - Added optional public leaderboard sync
 - Added local Kiro account label and plan/quota fallback
@@ -331,10 +365,12 @@ MIT License - see [LICENSE](LICENSE) file for details
 - Added website Open Graph preview image
 
 ### 0.2.7
+
 - Enhanced data collection and metrics calculation
 - Improved performance and stability
 
 ### 0.2.0
+
 - **Major update**: Complete stats implementation
 - Added Session Statistics (turns, success rate, durations)
 - Added Token Breakdown (prompt/generated analysis)
@@ -345,21 +381,27 @@ MIT License - see [LICENSE](LICENSE) file for details
 - Enhanced data collection from multiple sources
 
 ### 0.1.11
+
 - Previous stable release
 
 ### 0.1.4
+
 - Bug fixes and stability improvements
 
 ### 0.1.3
+
 - Enhanced metrics calculation
 
 ### 0.1.2
+
 - UI refinements
 
 ### 0.1.1
+
 - Initial feature set
 
 ### 0.1.0
+
 - Initial release with core features
 
 ## Author

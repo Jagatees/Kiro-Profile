@@ -1,0 +1,26 @@
+name: Bug report
+description: Report a reproducible Kiro Stat problem
+title: "[Bug]: "
+labels: ["type: bug"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Kiro Stat version
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options: [Windows, macOS, Linux]

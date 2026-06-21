@@ -127,9 +127,7 @@ export async function saveSubmission(submission: LeaderboardSubmission): Promise
   const publicId = submission.publicId;
 
   if (!process.env.BLOB_READ_WRITE_TOKEN) {
-    const existingIndex = publicId
-      ? memoryEntries.findIndex((item) => item.publicId === publicId)
-      : -1;
+    const existingIndex = publicId ? memoryEntries.findIndex((item) => item.publicId === publicId) : -1;
     const existing = existingIndex >= 0 ? memoryEntries[existingIndex] : undefined;
     const entry = withDefaults({
       ...existing,
@@ -215,7 +213,7 @@ async function readEntryBlob(publicId: string): Promise<Partial<LeaderboardEntry
     return undefined;
   }
   const parsed = await readJsonBlob(blob.url);
-  return parsed && !Array.isArray(parsed) ? parsed as Partial<LeaderboardEntry> : undefined;
+  return parsed && !Array.isArray(parsed) ? (parsed as Partial<LeaderboardEntry>) : undefined;
 }
 
 async function readLegacyEntries(): Promise<Array<Partial<LeaderboardEntry>>> {
@@ -225,7 +223,7 @@ async function readLegacyEntries(): Promise<Array<Partial<LeaderboardEntry>>> {
     return [];
   }
   const parsed = await readJsonBlob(blob.url);
-  return Array.isArray(parsed) ? parsed as Array<Partial<LeaderboardEntry>> : [];
+  return Array.isArray(parsed) ? (parsed as Array<Partial<LeaderboardEntry>>) : [];
 }
 
 async function readJsonBlob(url: string): Promise<unknown> {
@@ -236,7 +234,7 @@ async function readJsonBlob(url: string): Promise<unknown> {
     if (!response.ok) {
       return undefined;
     }
-    return await response.json() as unknown;
+    return (await response.json()) as unknown;
   } catch {
     return undefined;
   }

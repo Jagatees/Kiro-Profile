@@ -1,0 +1,8 @@
+node_modules
+out
+releases
+web/.next
+web/public/downloads
+*.vsix
+package-lock.json
+web/package-lock.json

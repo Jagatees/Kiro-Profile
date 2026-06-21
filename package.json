@@ -5,6 +5,10 @@
   "version": "0.3.0",
   "publisher": "jagatees",
   "license": "MIT",
+  "homepage": "https://github.com/jagatees/kiro-profile#readme",
+  "bugs": {
+    "url": "https://github.com/jagatees/kiro-profile/issues"
+  },
   "icon": "resources/icon.png",
   "repository": {
     "type": "git",
@@ -14,13 +18,23 @@
     "vscode": "^1.92.0"
   },
   "categories": [
-    "Other"
+    "Other",
+    "Visualization"
+  ],
+  "keywords": [
+    "kiro",
+    "developer stats",
+    "productivity",
+    "leaderboard",
+    "activity"
   ],
   "main": "./out/extension.js",
   "activationEvents": [
     "onView:kiroStat.profile",
     "onCommand:kiroStat.openProfile",
-    "onCommand:kiroStat.refresh"
+    "onCommand:kiroStat.refresh",
+    "onCommand:kiroStat.syncLeaderboard",
+    "onCommand:kiroStat.exportDiagnostics"
   ],
   "contributes": {
     "commands": [
@@ -35,6 +49,26 @@
         "title": "Kiro Stat: Refresh Stats",
         "category": "Kiro Stat",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "kiroStat.syncLeaderboard",
+        "title": "Kiro Stat: Sync Leaderboard Now",
+        "category": "Kiro Stat"
+      },
+      {
+        "command": "kiroStat.exportDiagnostics",
+        "title": "Kiro Stat: Export Diagnostics",
+        "category": "Kiro Stat"
+      },
+      {
+        "command": "kiroStat.openLogs",
+        "title": "Kiro Stat: Open Output Logs",
+        "category": "Kiro Stat"
+      },
+      {
+        "command": "kiroStat.openSettings",
+        "title": "Kiro Stat: Open Settings",
+        "category": "Kiro Stat"
       }
     ],
     "viewsContainers": {
@@ -76,7 +110,19 @@
         "kiroStat.leaderboardUrl": {
           "type": "string",
           "default": "https://kiro-profile-leaderboard-brown.vercel.app",
-          "description": "Leaderboard website URL opened by the Submit Profile button."
+          "description": "HTTPS leaderboard URL. Plain HTTP is accepted only for localhost development."
+        },
+        "kiroStat.maxScanFiles": {
+          "type": "number",
+          "default": 2000,
+          "minimum": 100,
+          "maximum": 10000,
+          "description": "Maximum files scanned from each local Kiro data source."
+        },
+        "kiroStat.diagnosticLogging": {
+          "type": "boolean",
+          "default": false,
+          "description": "Write detailed, redacted collection information to the Kiro Stat output channel."
         }
       }
     },
@@ -94,20 +140,48 @@
         },
         {
           "command": "kiroStat.refresh"
+        },
+        {
+          "command": "kiroStat.syncLeaderboard"
+        },
+        {
+          "command": "kiroStat.exportDiagnostics"
+        },
+        {
+          "command": "kiroStat.openLogs"
+        },
+        {
+          "command": "kiroStat.openSettings"
         }
       ]
     }
   },
   "scripts": {
-    "compile": "tsc -p ./",
+    "vscode:prepublish": "npm run compile",
+    "clean": "node -e \"require('fs').rmSync('out',{recursive:true,force:true})\"",
+    "compile": "npm run clean && tsc -p ./",
     "watch": "tsc -watch -p ./",
     "check": "tsc --noEmit -p ./",
-    "package": "vsce package --allow-missing-repository"
+    "lint": "eslint src test --max-warnings 0",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "package": "vsce package --allow-missing-repository",
+    "validate": "npm run format:check && npm run check && npm run lint && npm run test && npm run package"
   },
   "devDependencies": {
+    "@eslint/js": "9.32.0",
     "@types/node": "^22.10.1",
     "@types/vscode": "^1.92.0",
     "@vscode/vsce": "^3.2.1",
-    "typescript": "^5.7.2"
+    "eslint": "9.32.0",
+    "prettier": "^3.8.4",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "8.38.0",
+    "vitest": "3.2.6"
+  },
+  "overrides": {
+    "esbuild": "^0.28.1"
   }
 }

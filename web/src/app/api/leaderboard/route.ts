@@ -9,7 +9,7 @@ export async function GET() {
 export async function POST(request: Request) {
   let body: Record<string, unknown>;
   try {
-    body = await request.json() as Record<string, unknown>;
+    body = (await request.json()) as Record<string, unknown>;
   } catch {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
@@ -32,7 +32,7 @@ export async function POST(request: Request) {
 export async function DELETE(request: Request) {
   let body: Record<string, unknown>;
   try {
-    body = await request.json() as Record<string, unknown>;
+    body = (await request.json()) as Record<string, unknown>;
   } catch {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }

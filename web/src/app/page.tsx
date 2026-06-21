@@ -110,16 +110,13 @@ export default function Home() {
     });
   }, [entries, category]);
 
-  const totalTokens = useMemo(
-    () => entries.reduce((sum, entry) => sum + entry.tokensUsed, 0),
-    [entries]
-  );
+  const totalTokens = useMemo(() => entries.reduce((sum, entry) => sum + entry.tokensUsed, 0), [entries]);
   const topValue = ranked.length > 0 ? category.value(ranked[0]) : 0;
 
   async function loadLeaderboard() {
     try {
       const response = await fetch("/api/leaderboard", { cache: "no-store" });
-      const payload = await response.json() as { entries?: LeaderboardEntry[] };
+      const payload = (await response.json()) as { entries?: LeaderboardEntry[] };
       setEntries(payload.entries || []);
     } catch {
       setEntries([]);
@@ -138,7 +135,9 @@ export default function Home() {
 
       <header className="top">
         <div className="brand">
-          <span className="brand-badge"><Ghost className="brand-ghost" /></span>
+          <span className="brand-badge">
+            <Ghost className="brand-ghost" />
+          </span>
           <span className="brand-name">KIRO STAT</span>
         </div>
         <a className="btn btn-blue" href={marketplaceUrl} target="_blank" rel="noreferrer">
@@ -147,15 +146,23 @@ export default function Home() {
       </header>
 
       <section className="hero">
-        <span className="doodle doodle-star-yellow" aria-hidden="true">★</span>
-        <span className="doodle doodle-star-pink" aria-hidden="true">✦</span>
-        <span className="doodle doodle-zigzag" aria-hidden="true">⌁⌁</span>
+        <span className="doodle doodle-star-yellow" aria-hidden="true">
+          ★
+        </span>
+        <span className="doodle doodle-star-pink" aria-hidden="true">
+          ✦
+        </span>
+        <span className="doodle doodle-zigzag" aria-hidden="true">
+          ⌁⌁
+        </span>
         <h1>
-          GLOBAL<br />
+          GLOBAL
+          <br />
           <span className="hl">RANKINGS</span>
         </h1>
         <p className="lede">
-          See who&apos;s leading the world.<br />
+          See who&apos;s leading the world.
+          <br />
           Install Kiro Stat, go Public, and make your mark.
         </p>
       </section>
@@ -189,7 +196,8 @@ export default function Home() {
               <div className="empty">Loading rankings…</div>
             ) : ranked.length === 0 ? (
               <div className="empty">
-                <strong>No public profiles yet!</strong> Install the extension and switch Public on to claim the first spot.
+                <strong>No public profiles yet!</strong> Install the extension and switch Public on to claim the first
+                spot.
               </div>
             ) : (
               <ol className="entries">
@@ -230,9 +238,15 @@ export default function Home() {
           <div className="card card-yellow">
             <span className="card-tag">JOIN THE BOARD</span>
             <ol className="steps">
-              <li><span>1</span>Install <em>Kiro Stat</em> from Kiro Extensions</li>
-              <li><span>2</span>Open the panel to see your local stats</li>
-              <li><span>3</span>Flip <em>Public</em> on to publish</li>
+              <li>
+                <span>1</span>Install <em>Kiro Stat</em> from Kiro Extensions
+              </li>
+              <li>
+                <span>2</span>Open the panel to see your local stats
+              </li>
+              <li>
+                <span>3</span>Flip <em>Public</em> on to publish
+              </li>
             </ol>
             <a className="btn btn-pink" href={marketplaceUrl} target="_blank" rel="noreferrer">
               OPEN VSX →
@@ -242,16 +256,23 @@ export default function Home() {
           <div className="card card-pink">
             <span className="card-tag">PRIVACY</span>
             <p className="card-copy">
-              Only your name, handle, and the totals above are published. Flip back to Private to vanish from the board — poof!
+              Only your name, handle, and the totals above are published. Flip back to Private to vanish from the board
+              — poof!
             </p>
           </div>
         </aside>
       </section>
 
       <footer className="foot">
-        <span className="foot-doodle" aria-hidden="true">★</span>
-        <span className="foot-line">TRACK. <span className="hl-blue">COMPETE.</span> SHARE.</span>
-        <span className="foot-doodle" aria-hidden="true">★</span>
+        <span className="foot-doodle" aria-hidden="true">
+          ★
+        </span>
+        <span className="foot-line">
+          TRACK. <span className="hl-blue">COMPETE.</span> SHARE.
+        </span>
+        <span className="foot-doodle" aria-hidden="true">
+          ★
+        </span>
       </footer>
     </main>
   );

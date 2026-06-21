@@ -3,6 +3,15 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
+import { getKiroAppDataRoots as detectKiroAppDataRoots } from "./kiro/paths";
+import { parseSessionMetrics } from "./kiro/sessions";
+import {
+  createLeaderboardPayload,
+  getLeaderboardApiUrl as getSecureLeaderboardApiUrl,
+  redactSensitiveText,
+  validateLeaderboardUrl
+} from "./leaderboard/payload";
+import { listFilesBounded } from "./utils/fs";
 
 type DayPoint = {
   date: string;
@@ -144,7 +153,8 @@ const LANGUAGE_BY_EXTENSION = new Map<string, string>([
 ]);
 
 export function activate(context: vscode.ExtensionContext) {
-  const provider = new ProfileViewProvider(context);
+  const output = vscode.window.createOutputChannel("Kiro Stat");
+  const provider = new ProfileViewProvider(context, output);
 
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(ProfileViewProvider.viewType, provider, {
@@ -157,7 +167,14 @@ export function activate(context: vscode.ExtensionContext) {
     }),
     vscode.commands.registerCommand("kiroStat.refresh", async () => {
       await provider.refresh();
-    })
+    }),
+    vscode.commands.registerCommand("kiroStat.syncLeaderboard", async () => provider.syncLeaderboardNow()),
+    vscode.commands.registerCommand("kiroStat.exportDiagnostics", async () => provider.exportDiagnostics()),
+    vscode.commands.registerCommand("kiroStat.openLogs", () => output.show(true)),
+    vscode.commands.registerCommand("kiroStat.openSettings", async () => {
+      await vscode.commands.executeCommand("workbench.action.openSettings", "@ext:jagatees.kiro-stat");
+    }),
+    output
   );
 }
 
@@ -168,8 +185,12 @@ class ProfileViewProvider implements vscode.WebviewViewProvider {
 
   private view?: vscode.WebviewView;
   private didRender = false;
+  private refreshGeneration = 0;
 
-  constructor(private readonly context: vscode.ExtensionContext) {}
+  constructor(
+    private readonly context: vscode.ExtensionContext,
+    private readonly output: vscode.OutputChannel
+  ) {}
 
   async resolveWebviewView(webviewView: vscode.WebviewView) {
     this.view = webviewView;
@@ -192,6 +213,19 @@ class ProfileViewProvider implements vscode.WebviewViewProvider {
       }
     });
 
+    if (!this.context.globalState.get<boolean>("privacyNoticeSeen", false)) {
+      const choice = await vscode.window.showInformationMessage(
+        "Kiro Stat reads local Kiro files and git history to calculate your stats. Nothing is uploaded unless you turn on Public Leaderboard.",
+        "Got it",
+        "View Privacy Details"
+      );
+      await this.context.globalState.update("privacyNoticeSeen", true);
+      if (choice === "View Privacy Details") {
+        await vscode.env.openExternal(
+          vscode.Uri.parse("https://github.com/jagatees/kiro-profile/blob/main/docs/privacy.md")
+        );
+      }
+    }
     await this.refresh();
   }
 
@@ -200,17 +234,72 @@ class ProfileViewProvider implements vscode.WebviewViewProvider {
       return;
     }
 
+    const generation = ++this.refreshGeneration;
+    const startedAt = Date.now();
+    await this.view.webview.postMessage({ type: "loading", loading: true });
     const data = await collectProfileData(this.context);
+    if (generation !== this.refreshGeneration) return;
     if (data.leaderboardPublic) {
       await this.publishLeaderboardProfile(data, { force: false, silent: true });
     }
     if (!this.didRender) {
       this.view.webview.html = getProfileHtml(this.view.webview, this.context.extensionUri, data);
       this.didRender = true;
+      this.log(`Profile collected in ${Date.now() - startedAt}ms.`);
       return;
     }
 
     await this.view.webview.postMessage({ type: "profile-data", data });
+    await this.view.webview.postMessage({ type: "loading", loading: false });
+    this.log(`Profile collected in ${Date.now() - startedAt}ms.`);
+  }
+
+  async syncLeaderboardNow(): Promise<void> {
+    const data = await collectProfileData(this.context);
+    if (!data.leaderboardPublic) {
+      void vscode.window.showInformationMessage("Kiro Stat is private. Turn on Public before syncing.");
+      return;
+    }
+    await this.publishLeaderboardProfile(data, { force: true, silent: false });
+  }
+
+  async exportDiagnostics(): Promise<void> {
+    const sources = await Promise.all(
+      getKiroAppDataRoots(os.homedir()).map(async (root) => {
+        const scan = await listFilesBounded(root, { maxFiles: 500, maxTotalBytes: 5 * 1024 * 1024 });
+        return {
+          path: redactSensitiveText(root),
+          filesFound: scan.files.length,
+          skippedFiles: scan.skippedFiles,
+          limited: scan.limited
+        };
+      })
+    );
+    const report = {
+      product: "Kiro Stat",
+      extensionVersion: this.context.extension.packageJSON.version as string,
+      generatedAt: new Date().toISOString(),
+      platform: process.platform,
+      arch: process.arch,
+      sources,
+      publicLeaderboardEnabled: this.context.globalState.get<boolean>("leaderboardPublic", false),
+      lastLeaderboardSync: this.context.globalState.get<number>("leaderboardLastSyncedAt") ?? null,
+      privacy: "No raw session content, prompts, responses, emails, ARNs, secrets, or local home paths are included."
+    };
+    const destination = await vscode.window.showSaveDialog({
+      defaultUri: vscode.Uri.file(path.join(os.homedir(), "kiro-stat-diagnostics.json")),
+      filters: { JSON: ["json"] },
+      saveLabel: "Export Redacted Diagnostics"
+    });
+    if (!destination) return;
+    await vscode.workspace.fs.writeFile(destination, Buffer.from(JSON.stringify(report, null, 2), "utf8"));
+    void vscode.window.showInformationMessage("Kiro Stat diagnostics exported with sensitive paths redacted.");
+  }
+
+  private log(message: string): void {
+    if (vscode.workspace.getConfiguration("kiroStat").get<boolean>("diagnosticLogging", false)) {
+      this.output.appendLine(`[${new Date().toISOString()}] ${redactSensitiveText(message)}`);
+    }
   }
 
   private async saveShareCard(payload: ShareCardPayload) {
@@ -251,8 +340,10 @@ class ProfileViewProvider implements vscode.WebviewViewProvider {
       return;
     }
 
-    if (!["http:", "https:"].includes(parsed.protocol)) {
-      void vscode.window.showWarningMessage("Kiro Stat leaderboard URL must start with http or https.");
+    try {
+      validateLeaderboardUrl(parsed.toString());
+    } catch (error) {
+      void vscode.window.showWarningMessage(String(error));
       return;
     }
 
@@ -261,6 +352,22 @@ class ProfileViewProvider implements vscode.WebviewViewProvider {
 
   private async setLeaderboardPublic(enabled: boolean) {
     const wasPublic = this.context.globalState.get<boolean>("leaderboardPublic", false);
+    if (enabled && !wasPublic) {
+      const preview = await collectProfileData(this.context);
+      let endpoint: string;
+      try {
+        endpoint = getLeaderboardApiUrl(preview.leaderboardUrl);
+      } catch (error) {
+        void vscode.window.showWarningMessage(`Kiro Stat cannot publish: ${String(error)}`);
+        return;
+      }
+      const choice = await vscode.window.showWarningMessage(
+        `Publish display name, handle, tokens, credits, streaks, sessions, and active days to ${endpoint}? No prompts, responses, email, ARN, workspace name, path, or file content is sent.`,
+        { modal: true },
+        "Publish"
+      );
+      if (choice !== "Publish") return;
+    }
     await this.context.globalState.update("leaderboardPublic", enabled);
     const data = await collectProfileData(this.context);
 
@@ -287,20 +394,22 @@ class ProfileViewProvider implements vscode.WebviewViewProvider {
     }
 
     try {
+      const payload = createLeaderboardPayload({
+        publicId,
+        displayName: data.displayName,
+        handle: data.accountLabel || data.username,
+        tokensUsed: data.totalTokensRaw,
+        creditsUsed: data.totalCreditsRaw,
+        currentStreak: data.currentStreakRaw,
+        longestStreak: data.longestStreakRaw,
+        sessions: data.localSessionsRaw,
+        activeDays: data.activeDaysRaw
+      });
       const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          publicId,
-          displayName: data.displayName,
-          handle: data.accountLabel || data.username,
-          tokensUsed: data.totalTokensRaw,
-          creditsUsed: data.totalCreditsRaw,
-          currentStreak: data.currentStreakRaw,
-          longestStreak: data.longestStreakRaw,
-          sessions: data.localSessionsRaw,
-          activeDays: data.activeDaysRaw
-        })
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(9_000)
       });
 
       if (!response.ok) {
@@ -330,7 +439,8 @@ class ProfileViewProvider implements vscode.WebviewViewProvider {
       const response = await fetch(getLeaderboardApiUrl(data.leaderboardUrl), {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ publicId })
+        body: JSON.stringify({ publicId }),
+        signal: AbortSignal.timeout(9_000)
       });
 
       if (!response.ok) {
@@ -345,18 +455,16 @@ class ProfileViewProvider implements vscode.WebviewViewProvider {
       }
     } catch (error) {
       if (!options.silent) {
-        void vscode.window.showWarningMessage(`Kiro Stat could not remove the public leaderboard entry: ${String(error)}`);
+        void vscode.window.showWarningMessage(
+          `Kiro Stat could not remove the public leaderboard entry: ${String(error)}`
+        );
       }
     }
   }
 }
 
 function getLeaderboardApiUrl(rawUrl: string): string {
-  const url = new URL(rawUrl || "http://localhost:3000");
-  url.pathname = `${url.pathname.replace(/\/$/, "")}/api/leaderboard`;
-  url.search = "";
-  url.hash = "";
-  return url.toString();
+  return getSecureLeaderboardApiUrl(rawUrl);
 }
 
 function getLeaderboardSnapshotHash(data: ProfileData): string {
@@ -393,7 +501,8 @@ async function collectProfileData(context: vscode.ExtensionContext): Promise<Pro
   const appRoots = getKiroAppDataRoots(os.homedir());
   const localAccount = await readLocalKiroAccount(appRoots);
   const accountLabel = localAccount?.accountLabel || username;
-  const displayName = localAccount?.displayName || accountLabel || config.get<string>("displayName") || "Kiro Developer";
+  const displayName =
+    localAccount?.displayName || accountLabel || config.get<string>("displayName") || "Kiro Developer";
   const accountDetail = localAccount?.accountDetail || `@${username}`;
   const planLabel = localAccount?.planLabel || configuredPlanLabel;
   const accountSource = localAccount?.accountSource || "Settings fallback";
@@ -405,7 +514,7 @@ async function collectProfileData(context: vscode.ExtensionContext): Promise<Pro
   ]);
   const fileStats = workspacePath ? await getWorkspaceFileStats(workspacePath) : new Map<string, number>();
   const tokenCountsByDay = new Map(kiroUsage.tokenCountsByDay);
-  
+
   // Only add git commit tokens if we don't already have token data for that day
   for (const day of gitDays) {
     const existingTokens = tokenCountsByDay.get(day) || 0;
@@ -414,37 +523,32 @@ async function collectProfileData(context: vscode.ExtensionContext): Promise<Pro
       tokenCountsByDay.set(day, 800); // Lower estimate for git-only days
     }
   }
-  
+
   const heatmap = buildHeatmapFromCounts(tokenCountsByDay, [...gitDays, ...kiroUsage.days]);
   const availableYears = getAvailableYears(heatmap);
   const activeCounts = heatmap.filter((day) => day.count > 0);
   const currentStreak = getCurrentStreak(heatmap);
   const longestStreak = getLongestStreak(heatmap);
-  const topLanguages = [...fileStats.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 5);
-  const topModels = [...kiroUsage.modelCounts.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 4);
+  const topLanguages = [...fileStats.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const topModels = [...kiroUsage.modelCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4);
 
-  const topItems = topLanguages.length > 0
-    ? topLanguages.map(([name, count]) => ({ name, value: `${count} files` }))
-    : [{ name: "No code files yet", value: "0 files" }];
-  const modelItems = topModels.length > 0
-    ? topModels.map(([name, count]) => ({ name: formatModelName(name), value: `${count} sessions` }))
-    : [{ name: "Auto", value: "Detected from Kiro" }];
+  const topItems =
+    topLanguages.length > 0
+      ? topLanguages.map(([name, count]) => ({ name, value: `${count} files` }))
+      : [{ name: "No code files yet", value: "0 files" }];
+  const modelItems =
+    topModels.length > 0
+      ? topModels.map(([name, count]) => ({ name: formatModelName(name), value: `${count} sessions` }))
+      : [{ name: "Auto", value: "Detected from Kiro" }];
 
-  const topTools = [...kiroUsage.toolUsageCounts.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 5);
-  const mostActiveHour = [...kiroUsage.hourlyActivity.entries()]
-    .sort((a, b) => b[1] - a[1])[0];
-  const avgSessionDuration = kiroUsage.sessionDurations.length > 0
-    ? kiroUsage.sessionDurations.reduce((sum, d) => sum + d, 0) / kiroUsage.sessionDurations.length
-    : 0;
-  const successRate = kiroUsage.totalTurns > 0
-    ? ((kiroUsage.totalTurns - kiroUsage.failedTurns) / kiroUsage.totalTurns * 100)
-    : 100;
+  const topTools = [...kiroUsage.toolUsageCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const mostActiveHour = [...kiroUsage.hourlyActivity.entries()].sort((a, b) => b[1] - a[1])[0];
+  const avgSessionDuration =
+    kiroUsage.sessionDurations.length > 0
+      ? kiroUsage.sessionDurations.reduce((sum, d) => sum + d, 0) / kiroUsage.sessionDurations.length
+      : 0;
+  const successRate =
+    kiroUsage.totalTurns > 0 ? ((kiroUsage.totalTurns - kiroUsage.failedTurns) / kiroUsage.totalTurns) * 100 : 100;
   const currentStreakLabel = `${currentStreak} days`;
   const longestStreakLabel = `${longestStreak} days`;
   const totalLanguageFiles = sumValues(fileStats);
@@ -465,9 +569,7 @@ async function collectProfileData(context: vscode.ExtensionContext): Promise<Pro
   const busiestWeekdayIndex = weekdayTotals.indexOf(Math.max(...weekdayTotals));
   const busiestWeekday = totalHeatmapTokens > 0 ? weekdayNames[busiestWeekdayIndex] : "N/A";
   const weekendShare = totalHeatmapTokens > 0 ? Math.round((weekendTokens / totalHeatmapTokens) * 100) : 0;
-  const avgTokensPerActiveDay = activeCounts.length > 0
-    ? Math.round(kiroUsage.totalTokens / activeCounts.length)
-    : 0;
+  const avgTokensPerActiveDay = activeCounts.length > 0 ? Math.round(kiroUsage.totalTokens / activeCounts.length) : 0;
 
   return {
     displayName,
@@ -526,20 +628,44 @@ async function collectProfileData(context: vscode.ExtensionContext): Promise<Pro
       { name: "Total Tokens", value: formatCompact(kiroUsage.totalTokens) },
       { name: "Prompt Tokens", value: formatCompact(kiroUsage.promptTokens) },
       { name: "Generated Tokens", value: formatCompact(kiroUsage.generatedTokens) },
-      { name: "Prompt/Generated Ratio", value: kiroUsage.generatedTokens > 0 ? `${(kiroUsage.promptTokens / kiroUsage.generatedTokens).toFixed(2)}` : "N/A" },
-      { name: "Avg Context Window", value: kiroUsage.contextWindowUsage.length > 0 ? formatCompact(Math.round(kiroUsage.contextWindowUsage.reduce((a, b) => a + b, 0) / kiroUsage.contextWindowUsage.length)) : "N/A" }
+      {
+        name: "Prompt/Generated Ratio",
+        value:
+          kiroUsage.generatedTokens > 0 ? `${(kiroUsage.promptTokens / kiroUsage.generatedTokens).toFixed(2)}` : "N/A"
+      },
+      {
+        name: "Avg Context Window",
+        value:
+          kiroUsage.contextWindowUsage.length > 0
+            ? formatCompact(
+                Math.round(
+                  kiroUsage.contextWindowUsage.reduce((a, b) => a + b, 0) / kiroUsage.contextWindowUsage.length
+                )
+              )
+            : "N/A"
+      }
     ],
     activityPatterns: [
-      { name: "Most Active Hour", value: mostActiveHour ? `${mostActiveHour[0]}:00 (${mostActiveHour[1]} events)` : "N/A" },
+      {
+        name: "Most Active Hour",
+        value: mostActiveHour ? `${mostActiveHour[0]}:00 (${mostActiveHour[1]} events)` : "N/A"
+      },
       { name: "Busiest Day", value: busiestWeekday },
       { name: "Weekend Activity", value: `${weekendShare}%` },
       { name: "Total Active Days", value: `${activeCounts.length}` },
-      { name: "Avg Tokens/Active Day", value: avgTokensPerActiveDay > 0 ? formatCompact(avgTokensPerActiveDay) : "N/A" },
-      { name: "Avg Activity/Day", value: activeCounts.length > 0 ? `${(kiroUsage.totalTurns / activeCounts.length).toFixed(1)} turns` : "N/A" }
+      {
+        name: "Avg Tokens/Active Day",
+        value: avgTokensPerActiveDay > 0 ? formatCompact(avgTokensPerActiveDay) : "N/A"
+      },
+      {
+        name: "Avg Activity/Day",
+        value: activeCounts.length > 0 ? `${(kiroUsage.totalTurns / activeCounts.length).toFixed(1)} turns` : "N/A"
+      }
     ],
-    toolStats: topTools.length > 0
-      ? topTools.map(([name, count]) => ({ name, value: `${count} uses` }))
-      : [{ name: "No tool data yet", value: "0 uses" }],
+    toolStats:
+      topTools.length > 0
+        ? topTools.map(([name, count]) => ({ name, value: `${count} uses` }))
+        : [{ name: "No tool data yet", value: "0 uses" }],
     systemStats: [
       { name: "Hooks Installed", value: `${kiroUsage.hookCount}` },
       { name: "Powers Installed", value: `${kiroUsage.powerCount}` },
@@ -564,13 +690,18 @@ async function collectProfileData(context: vscode.ExtensionContext): Promise<Pro
 
 async function getGitActivityDays(cwd: string): Promise<string[]> {
   return new Promise((resolve) => {
-    cp.exec("git log --date=short --pretty=format:%ad --all --since=\"365 days ago\"", { cwd }, (error, stdout) => {
+    cp.exec('git log --date=short --pretty=format:%ad --all --since="365 days ago"', { cwd }, (error, stdout) => {
       if (error || !stdout.trim()) {
         resolve([]);
         return;
       }
 
-      resolve(stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean));
+      resolve(
+        stdout
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .filter(Boolean)
+      );
     });
   });
 }
@@ -754,9 +885,9 @@ async function getKiroUsage(): Promise<KiroUsage> {
           // Structure is a plain array: [{ sessionId, dateCreated, ... }]
           // (older versions may have wrapped it as { value: [...] })
           const list: Record<string, unknown>[] = Array.isArray(raw)
-            ? raw as Record<string, unknown>[]
+            ? (raw as Record<string, unknown>[])
             : Array.isArray((raw as Record<string, unknown>).value)
-              ? (raw as Record<string, unknown>).value as Record<string, unknown>[]
+              ? ((raw as Record<string, unknown>).value as Record<string, unknown>[])
               : [];
 
           for (const s of list) {
@@ -770,9 +901,13 @@ async function getKiroUsage(): Promise<KiroUsage> {
               }
             }
           }
-        } catch { /* index missing or malformed */ }
+        } catch {
+          /* index missing or malformed */
+        }
       }
-    } catch { /* workspace-sessions dir missing */ }
+    } catch {
+      /* workspace-sessions dir missing */
+    }
 
     try {
       const wsRoot = path.join(agentStorageRoot, "workspace-sessions");
@@ -790,7 +925,7 @@ async function getKiroUsage(): Promise<KiroUsage> {
         ideSessionCount += 1;
         largestSessionBytes = Math.max(largestSessionBytes, stat.size);
 
-        const parsed = await readJsonFile(file) as Record<string, unknown> | undefined;
+        const parsed = (await readJsonFile(file)) as Record<string, unknown> | undefined;
 
         const metrics = collectSessionMetrics(parsed, stat.size, day);
         totalTokens += metrics.tokens;
@@ -826,7 +961,7 @@ async function getKiroUsage(): Promise<KiroUsage> {
           contextWindowUsage.push(metrics.contextSize);
         }
 
-        const history = parsed && Array.isArray(parsed.history) ? parsed.history as Record<string, unknown>[] : [];
+        const history = parsed && Array.isArray(parsed.history) ? (parsed.history as Record<string, unknown>[]) : [];
         if (metrics.totalTurns === 0 && history.length > 0) {
           totalTurns += Math.floor(history.length / 2);
         }
@@ -872,7 +1007,6 @@ async function getKiroUsage(): Promise<KiroUsage> {
     } catch {
       // Dev token logs are optional and may be disabled.
     }
-
   }
 
   hookCount = await countFiles(path.join(kiroHome, "hooks"), ".hook");
@@ -883,7 +1017,10 @@ async function getKiroUsage(): Promise<KiroUsage> {
   if (totalTokens <= 0 && days.length > 0) {
     // Spread a rough estimate evenly across all known active days
     const uniqueDays = [...new Set(days)].filter(Boolean).sort();
-    const roughTotal = Math.max(largestSessionBytes > 0 ? Math.round(largestSessionBytes / 6) : 0, uniqueDays.length * 5000);
+    const roughTotal = Math.max(
+      largestSessionBytes > 0 ? Math.round(largestSessionBytes / 6) : 0,
+      uniqueDays.length * 5000
+    );
     totalTokens = roughTotal;
     const perDay = Math.round(roughTotal / uniqueDays.length);
     for (const d of uniqueDays) {
@@ -949,13 +1086,7 @@ type SessionMetrics = {
 };
 
 function getKiroAppDataRoots(home: string): string[] {
-  const candidates = [
-    process.env.APPDATA ? path.join(process.env.APPDATA, "Kiro") : "",
-    process.platform === "darwin" ? path.join(home, "Library", "Application Support", "Kiro") : "",
-    process.env.XDG_CONFIG_HOME ? path.join(process.env.XDG_CONFIG_HOME, "Kiro") : "",
-    path.join(home, ".config", "Kiro")
-  ].filter(Boolean);
-  return [...new Set(candidates)];
+  return detectKiroAppDataRoots(home);
 }
 
 async function readLocalKiroAccount(appRoots: string[]): Promise<LocalKiroAccount | undefined> {
@@ -985,7 +1116,10 @@ async function readLocalKiroAccount(appRoots: string[]): Promise<LocalKiroAccoun
   return undefined;
 }
 
-async function getLocalProfileDisplayName(record: Record<string, unknown>, appRoot: string): Promise<string | undefined> {
+async function getLocalProfileDisplayName(
+  record: Record<string, unknown>,
+  appRoot: string
+): Promise<string | undefined> {
   for (const key of ["email", "accountEmail", "userEmail"]) {
     const value = stringValue(record[key]);
     if (isEmail(value)) {
@@ -1198,7 +1332,10 @@ async function readJsonFile(filePath: string): Promise<unknown> {
   }
 }
 
-async function readTokenGenerationLog(filePath: string, sessionDates: string[]): Promise<{
+async function readTokenGenerationLog(
+  filePath: string,
+  sessionDates: string[]
+): Promise<{
   tokens: number;
   promptTokens: number;
   generatedTokens: number;
@@ -1215,7 +1352,7 @@ async function readTokenGenerationLog(filePath: string, sessionDates: string[]):
 
   try {
     const content = await fs.readFile(filePath, "utf8");
-    const lines = content.split(/\r?\n/).filter(l => l.trim());
+    const lines = content.split(/\r?\n/).filter((l) => l.trim());
 
     // Parse all rows first
     const rows: Array<{ promptTokens: number; generatedTokens: number; model: string }> = [];
@@ -1239,7 +1376,8 @@ async function readTokenGenerationLog(filePath: string, sessionDates: string[]):
       }
     }
 
-    if (rows.length === 0) return { tokens, promptTokens, generatedTokens, tokenCountsByDay, modelCounts, rows: parsedRows };
+    if (rows.length === 0)
+      return { tokens, promptTokens, generatedTokens, tokenCountsByDay, modelCounts, rows: parsedRows };
 
     // The JSONL has no timestamps. Distribute tokens across known session dates.
     // Each session day gets a proportional slice of the total rows.
@@ -1253,7 +1391,6 @@ async function readTokenGenerationLog(filePath: string, sessionDates: string[]):
       const day = dates[dayIndex];
       tokenCountsByDay.set(day, (tokenCountsByDay.get(day) || 0) + rowTokens);
     });
-
   } catch {
     return { tokens, promptTokens, generatedTokens, tokenCountsByDay, modelCounts, rows: parsedRows };
   }
@@ -1318,8 +1455,10 @@ function collectSessionMetrics(root: unknown, fileSize: number, fallbackDay: str
     }
 
     // --- tokens ---
-    const inputTokens = numberValue(record.input_token_count) || numberValue(record.inputTokens) || numberValue(record.promptTokens);
-    const outputTokens = numberValue(record.output_token_count) || numberValue(record.outputTokens) || numberValue(record.generatedTokens);
+    const inputTokens =
+      numberValue(record.input_token_count) || numberValue(record.inputTokens) || numberValue(record.promptTokens);
+    const outputTokens =
+      numberValue(record.output_token_count) || numberValue(record.outputTokens) || numberValue(record.generatedTokens);
     const tokenTotal = inputTokens + outputTokens;
     if (tokenTotal > 0) {
       addTokens(discoveredDay, tokenTotal);
@@ -1327,7 +1466,8 @@ function collectSessionMetrics(root: unknown, fileSize: number, fallbackDay: str
       if (outputTokens > 0) metrics.generatedTokens += outputTokens;
     }
 
-    const contextTokens = numberValue(record.context_token_count) || numberValue(record.contextTokens) || numberValue(record.contextSize);
+    const contextTokens =
+      numberValue(record.context_token_count) || numberValue(record.contextTokens) || numberValue(record.contextSize);
     if (contextTokens > 0) metrics.contextSize = Math.max(metrics.contextSize, contextTokens);
 
     // --- credits ---
@@ -1439,6 +1579,16 @@ function collectSessionMetrics(root: unknown, fileSize: number, fallbackDay: str
     metrics.sessionDuration = (sessionEndMs - sessionStartMs) / 1000 / 60;
   }
 
+  if (metrics.tokens === 0) {
+    const fallback = parseSessionMetrics(root, fileSize, fallbackDay);
+    metrics.tokens = fallback.tokens;
+    metrics.promptTokens = fallback.promptTokens;
+    metrics.generatedTokens = fallback.generatedTokens;
+    if (fallback.tokens > 0) {
+      metrics.tokenCountsByDay.set(fallback.days[0] ?? fallbackDay, fallback.tokens);
+    }
+  }
+
   return metrics;
 }
 
@@ -1474,28 +1624,8 @@ function numberValue(value: unknown): number {
 }
 
 async function listFiles(root: string): Promise<string[]> {
-  const files: string[] = [];
-
-  async function walk(current: string) {
-    let entries;
-    try {
-      entries = await fs.readdir(current, { withFileTypes: true });
-    } catch {
-      return;
-    }
-
-    for (const entry of entries) {
-      const fullPath = path.join(current, entry.name);
-      if (entry.isDirectory()) {
-        await walk(fullPath);
-      } else if (entry.isFile()) {
-        files.push(fullPath);
-      }
-    }
-  }
-
-  await walk(root);
-  return files;
+  const maxFiles = vscode.workspace.getConfiguration("kiroStat").get<number>("maxScanFiles", 2_000);
+  return (await listFilesBounded(root, { maxFiles })).files;
 }
 
 async function countFiles(root: string, extension: string): Promise<number> {
@@ -2974,12 +3104,29 @@ function insightCards(data: ProfileData): string {
   const sessions = data.insights.find((item) => item.name === "Local Kiro sessions")?.value || data.localSessions;
   const streak = data.insights.find((item) => item.name === "Longest streak")?.value || data.currentStreak;
   const items = [
-    { icon: calendarIcon(), title: `You used Kiro across ${data.kiroOpens30d} launches.`, detail: `Local sessions tracked: ${sessions}.` },
-    { icon: trendIcon(), title: `Your top workspace language is ${language}.`, detail: "Language mix is based on files in this workspace." },
-    { icon: cubeLineIcon(), title: `Peak daily activity reached ${peak} tokens.`, detail: "Token activity comes from Kiro local logs when available." },
+    {
+      icon: calendarIcon(),
+      title: `You used Kiro across ${data.kiroOpens30d} launches.`,
+      detail: `Local sessions tracked: ${sessions}.`
+    },
+    {
+      icon: trendIcon(),
+      title: `Your top workspace language is ${language}.`,
+      detail: "Language mix is based on files in this workspace."
+    },
+    {
+      icon: cubeLineIcon(),
+      title: `Peak daily activity reached ${peak} tokens.`,
+      detail: "Token activity comes from Kiro local logs when available."
+    },
     { icon: flameIcon(), title: `You've been on a ${streak} best streak.`, detail: "Keep up the momentum!" }
   ];
-  return items.map((item) => `<div class="insight-card"><span class="insight-icon">${item.icon}</span><span class="insight-copy"><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.detail)}</span></span><span class="chev">›</span></div>`).join("");
+  return items
+    .map(
+      (item) =>
+        `<div class="insight-card"><span class="insight-icon">${item.icon}</span><span class="insight-copy"><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.detail)}</span></span><span class="chev">›</span></div>`
+    )
+    .join("");
 }
 
 function topItemRow(item: NamedMetric): string {
@@ -2991,7 +3138,13 @@ function topItemRows(items: NamedMetric[]): string {
 }
 
 function languageTiles(items: NamedMetric[]): string {
-  return items.slice(0, 6).map((item) => `<div class="language-tile" title="${escapeHtml(`${item.name} - ${item.value}`)}">${escapeHtml(languageShortName(item.name))}</div>`).join("");
+  return items
+    .slice(0, 6)
+    .map(
+      (item) =>
+        `<div class="language-tile" title="${escapeHtml(`${item.name} - ${item.value}`)}">${escapeHtml(languageShortName(item.name))}</div>`
+    )
+    .join("");
 }
 
 function modelItemRow(item: NamedMetric): string {
@@ -2999,10 +3152,15 @@ function modelItemRow(item: NamedMetric): string {
 }
 
 function modelRows(items: NamedMetric[]): string {
-  return items.map((item) => `<div class="model-row">` +
-      `<span class="lang-icon model-icon">${modelIcon()}</span>` +
-      `<span class="model-copy"><span class="model-name">${escapeHtml(item.name)}</span><span class="model-detail">${escapeHtml(item.value)}</span></span>` +
-      `</div>`).join("");
+  return items
+    .map(
+      (item) =>
+        `<div class="model-row">` +
+        `<span class="lang-icon model-icon">${modelIcon()}</span>` +
+        `<span class="model-copy"><span class="model-name">${escapeHtml(item.name)}</span><span class="model-detail">${escapeHtml(item.value)}</span></span>` +
+        `</div>`
+    )
+    .join("");
 }
 
 function escapeHtml(value: string): string {
@@ -3015,12 +3173,7 @@ function escapeHtml(value: string): string {
 }
 
 function getNonce(): string {
-  let text = "";
-  const possible = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  for (let i = 0; i < 32; i += 1) {
-    text += possible.charAt(Math.floor(Math.random() * possible.length));
-  }
-  return text;
+  return crypto.randomUUID().replace(/-/g, "");
 }
 
 function ghostIcon(): string {
@@ -3104,7 +3257,11 @@ function databaseIcon(): string {
 }
 
 function simpleRows(items: NamedMetric[]): string {
-  return items.map((item) => `<div class="row"><span>${escapeHtml(item.name)}</span><strong>${escapeHtml(item.value)}</strong></div>`).join("");
+  return items
+    .map(
+      (item) => `<div class="row"><span>${escapeHtml(item.name)}</span><strong>${escapeHtml(item.value)}</strong></div>`
+    )
+    .join("");
 }
 function cubeLineIcon(): string {
   return `<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m12 3 7 4v8l-7 4-7-4V7l7-4Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M5 7l7 4 7-4M12 11v8" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>`;
@@ -3149,7 +3306,5 @@ function formatModelName(model: string): string {
   if (model.toLowerCase() === "qdev") {
     return "Amazon Q Developer";
   }
-  return model
-    .replace(/[-_]/g, " ")
-    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+  return model.replace(/[-_]/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
