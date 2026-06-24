@@ -1,6 +1,7 @@
 .git/**
 .gitignore
 .vscode/**
+.vercel/**
 node_modules/**
 web/**
 kiro-profile-shares/**
