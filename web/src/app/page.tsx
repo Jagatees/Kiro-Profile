@@ -7,68 +7,26 @@ type LeaderboardEntry = {
   displayName: string;
   handle: string;
   tokensUsed: number;
-  creditsUsed: number;
-  currentStreak: number;
-  longestStreak: number;
-  sessions: number;
-  activeDays: number;
   submittedAt: string;
-};
-
-type Category = {
-  id: string;
-  label: string;
-  unit: string;
-  description: string;
-  value: (entry: LeaderboardEntry) => number;
 };
 
 const marketplaceUrl = "https://open-vsx.org/extension/jagatees/kiro-stat";
 
-const categories: Category[] = [
-  {
-    id: "tokens",
-    label: "Tokens",
-    unit: "tokens",
-    description: "Estimated tokens used across all local Kiro sessions.",
-    value: (entry) => entry.tokensUsed
-  },
-  {
-    id: "credits",
-    label: "Credits",
-    unit: "credits",
-    description: "Credits recorded from local Kiro metering data.",
-    value: (entry) => entry.creditsUsed
-  },
-  {
-    id: "streak",
-    label: "Streak",
-    unit: "day streak",
-    description: "Consecutive days of activity, counted up to today.",
-    value: (entry) => entry.currentStreak
-  },
-  {
-    id: "best-streak",
-    label: "Best Streak",
-    unit: "days",
-    description: "Longest run of consecutive active days on record.",
-    value: (entry) => entry.longestStreak
-  },
-  {
-    id: "sessions",
-    label: "Sessions",
-    unit: "sessions",
-    description: "Local Kiro sessions tracked by the extension.",
-    value: (entry) => entry.sessions
-  },
-  {
-    id: "active-days",
-    label: "Active Days",
-    unit: "days",
-    description: "Total days with tracked Kiro or git activity.",
-    value: (entry) => entry.activeDays
-  }
-];
+function GhostIcon() {
+  return (
+    <svg viewBox="0 0 100 112" fill="none" aria-hidden="true">
+      <path
+        d="M50 6C27 6 13 24 13 48v46q0 7 5.5 3.5l8.5-5.5q3-2 6 0l8.5 6q4.5 3 9 0l8.5-6q3-2 6 0l8.5 5.5Q87 101 87 94V48C87 24 73 6 50 6Z"
+        fill="#fff"
+        stroke="#111"
+        strokeLinejoin="round"
+        strokeWidth="5"
+      />
+      <ellipse cx="38" cy="47" fill="#111" rx="5.5" ry="8.5" />
+      <ellipse cx="62" cy="47" fill="#111" rx="5.5" ry="8.5" />
+    </svg>
+  );
+}
 
 function compactNumber(value: number): string {
   return new Intl.NumberFormat("en", {
@@ -77,27 +35,34 @@ function compactNumber(value: number): string {
   }).format(value);
 }
 
+function displayLabel(name: string): string {
+  const base = name.includes("@") ? name.split("@")[0] : name;
+  const label = base
+    .split(/[\s._-]+/)
+    .filter(Boolean)
+    .slice(0, 3)
+    .map((part) => `${part[0]?.toUpperCase() || ""}${part.slice(1)}`)
+    .join(" ");
+  return label || "Kiro Builder";
+}
+
 export default function Home() {
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [loaded, setLoaded] = useState(false);
-  const [categoryId, setCategoryId] = useState(categories[0].id);
-
-  const category = categories.find((item) => item.id === categoryId) ?? categories[0];
 
   const ranked = useMemo(() => {
     return [...entries].sort((a, b) => {
-      const diff = category.value(b) - category.value(a);
+      const diff = b.tokensUsed - a.tokensUsed;
       if (diff !== 0) {
         return diff;
       }
       return new Date(a.submittedAt).getTime() - new Date(b.submittedAt).getTime();
     });
-  }, [entries, category]);
+  }, [entries]);
 
   const totalTokens = useMemo(() => entries.reduce((sum, entry) => sum + entry.tokensUsed, 0), [entries]);
-  const totalCredits = useMemo(() => entries.reduce((sum, entry) => sum + entry.creditsUsed, 0), [entries]);
-  const activeBuilders = useMemo(() => entries.filter((entry) => entry.currentStreak > 0).length, [entries]);
-  const topValue = ranked.length > 0 ? category.value(ranked[0]) : 0;
+  const topValue = ranked.length > 0 ? ranked[0].tokensUsed : 0;
+  const topBuilder = ranked[0];
 
   async function loadLeaderboard() {
     try {
@@ -117,133 +82,77 @@ export default function Home() {
 
   return (
     <main className="shell">
-      <header className="app-header">
+      <header className="profile-card">
+        <span className="header-ghost" aria-hidden="true">
+          <GhostIcon />
+        </span>
         <div className="profile-line">
-          <span className="avatar">KS</span>
+          <span className="brand-mark">K</span>
           <div className="profile-meta">
-            <p className="name">Kiro Stat Leaderboard</p>
+            <p className="name">Kiro Profile</p>
             <p className="handle">
-              Public profiles
-              <span className="badge">Live</span>
+              @token-board <span className="local-badge">LOCAL</span>
             </p>
           </div>
         </div>
         <div className="header-actions">
           <button className="action sync-button" type="button" onClick={() => void loadLeaderboard()}>
-            Refresh
+            Sync
           </button>
           <a className="action" href={marketplaceUrl} target="_blank" rel="noreferrer">
-            Get Extension
+            Install
           </a>
         </div>
       </header>
 
-      <section className="metric-grid" aria-label="Leaderboard totals">
-        <article className="metric-card hot">
-          <p className="metric-label">Builders Ranked</p>
-          <p className="metric-value">{entries.length}</p>
-          <p className="metric-sub">{entries.length === 1 ? "public profile" : "public profiles"}</p>
+      <section className="summary-strip" aria-label="Leaderboard totals">
+        <article className="summary-cell pink-cell">
+          <span>{compactNumber(totalTokens)}</span>
+          <strong>Est. Tokens</strong>
         </article>
-        <article className="metric-card soft">
-          <p className="metric-label">Tokens Tracked</p>
-          <p className="metric-value">{compactNumber(totalTokens)}</p>
-          <p className="metric-sub">shared from local Kiro stats</p>
+        <article className="summary-cell">
+          <span>{entries.length}</span>
+          <strong>Profiles</strong>
         </article>
-        <article className="metric-card">
-          <p className="metric-label">Credits Used</p>
-          <p className="metric-value">{compactNumber(totalCredits)}</p>
-          <p className="metric-sub">aggregate public total</p>
-        </article>
-        <article className="metric-card accent">
-          <p className="metric-label">Active Streaks</p>
-          <p className="metric-value">{activeBuilders}</p>
-          <p className="metric-sub">builders active today</p>
+        <article className="summary-cell lime-cell">
+          <span>{topBuilder ? compactNumber(topBuilder.tokensUsed) : "0"}</span>
+          <strong>Top Builder</strong>
         </article>
       </section>
 
-      <section className="layout">
-        <section className="panel board" aria-label={`${category.label} leaderboard`}>
-          <div className="panel-head">
-            <div>
-              <h1 className="panel-title">{category.label} Ranking</h1>
-              <p className="panel-subtitle">{category.description}</p>
-            </div>
-            <span className="refresh-status">{loaded ? "Updated" : "Loading"}</span>
-          </div>
+      <section className="board" aria-label="Token leaderboard">
+        <div className="board-head">
+          <h1>Token Leaderboard</h1>
+          <span>{loaded ? "Last synced just now" : "Loading"}</span>
+        </div>
 
-          <nav className="tabs" aria-label="Ranking categories">
-            {categories.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                className={item.id === category.id ? "tab tab-active" : "tab"}
-                onClick={() => setCategoryId(item.id)}
-              >
-                {item.label}
-              </button>
-            ))}
-          </nav>
-
-          {!loaded ? (
-            <div className="empty">Loading rankings...</div>
-          ) : ranked.length === 0 ? (
-            <div className="empty">
-              <strong>No public profiles yet.</strong> Install the extension and switch Public on to claim the first
-              spot.
-            </div>
-          ) : (
-            <ol className="entries">
-              {ranked.map((entry, index) => {
-                const value = category.value(entry);
-                const width = topValue > 0 ? Math.max(4, (value / topValue) * 100) : 0;
-                return (
-                  <li className={`entry rank-${index + 1}`} key={entry.id}>
-                    <span className="rank">{index + 1}</span>
-                    <span className="who">
-                      <span className="entry-name">{entry.displayName}</span>
-                      <span className="entry-handle">@{entry.handle}</span>
-                    </span>
-                    <span className="meter" aria-hidden="true">
-                      <span style={{ width: `${width}%` }} />
-                    </span>
-                    <span className="score">
-                      <strong>{compactNumber(value)}</strong>
-                      <span>{category.unit}</span>
-                    </span>
-                  </li>
-                );
-              })}
-            </ol>
-          )}
-        </section>
-
-        <aside className="side">
-          <section className="panel join-panel">
-            <h2 className="panel-title">Publish Profile</h2>
-            <ol className="steps">
-              <li>
-                <span>1</span>Install Kiro Stat from Open VSX
-              </li>
-              <li>
-                <span>2</span>Open the profile panel
-              </li>
-              <li>
-                <span>3</span>Switch Public on
-              </li>
-            </ol>
-            <a className="action sync-button action-wide" href={marketplaceUrl} target="_blank" rel="noreferrer">
-              Open VSX
-            </a>
-          </section>
-
-          <section className="panel privacy-panel">
-            <h2 className="panel-title">Privacy</h2>
-            <p className="card-copy">
-              Only your display name, handle, and aggregate totals are published. Switching back to Private removes the
-              public row.
-            </p>
-          </section>
-        </aside>
+        {!loaded ? (
+          <div className="empty">Loading rankings...</div>
+        ) : ranked.length === 0 ? (
+          <div className="empty">No public token data yet.</div>
+        ) : (
+          <ol className="entries">
+            {ranked.map((entry, index) => {
+              const width = topValue > 0 ? Math.max(4, (entry.tokensUsed / topValue) * 100) : 0;
+              return (
+                <li className="entry" key={entry.id}>
+                  <span className="rank">{String(index + 1).padStart(2, "0")}</span>
+                  <span className="who">
+                    <span className="entry-name">{displayLabel(entry.displayName)}</span>
+                    <span className="entry-handle">@{entry.handle}</span>
+                  </span>
+                  <span className="score">
+                    <strong>{compactNumber(entry.tokensUsed)}</strong>
+                    <span>tokens</span>
+                  </span>
+                  <span className="meter" aria-hidden="true">
+                    <span style={{ width: `${width}%` }} />
+                  </span>
+                </li>
+              );
+            })}
+          </ol>
+        )}
       </section>
     </main>
   );
