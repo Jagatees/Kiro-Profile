@@ -1796,6 +1796,7 @@ function formatBytes(bytes: number): string {
 export function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri, data: ProfileData): string {
   const nonce = getNonce();
   const cspSource = webview.cspSource;
+  const iconUri = String(webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "resources", "icon.png")));
   const encoded = JSON.stringify(data).replace(/</g, "\\u003c");
 
   return `<!DOCTYPE html>
@@ -1907,6 +1908,7 @@ export function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri
     .profile-line {
       display: flex;
       align-items: center;
+      flex: 1 1 auto;
       gap: 14px;
       min-width: 0;
     }
@@ -1929,6 +1931,7 @@ export function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri
     .profile-meta {
       display: grid;
       gap: 3px;
+      min-width: 0;
     }
 
     .profile-meta .name {
@@ -1937,6 +1940,7 @@ export function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri
       line-height: 1.15;
       font-weight: 900;
       letter-spacing: 0.01em;
+      max-width: 100%;
     }
 
     .handle {
@@ -2622,8 +2626,24 @@ export function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri
       return String(Math.round(value));
     }
 
+    function localIsoDate(date) {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const day = String(date.getDate()).padStart(2, "0");
+      return year + "-" + month + "-" + day;
+    }
+
     function pointsForYear(year) {
-      return data.heatmap.filter((point) => point.date.startsWith(String(year) + "-"));
+      const selectedYear = Number(year);
+      const today = new Date();
+      const currentYear = today.getFullYear();
+      const todayKey = localIsoDate(today);
+      return data.heatmap.filter((point) => {
+        if (!point.date.startsWith(String(year) + "-")) return false;
+        if (selectedYear > currentYear) return false;
+        if (selectedYear === currentYear && point.date > todayKey) return false;
+        return true;
+      });
     }
 
     function renderHeatmap(year) {
@@ -2847,6 +2867,243 @@ export function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri
     });
 
     document.getElementById("share").addEventListener("click", async () => {
+      {
+        const canvas = document.createElement("canvas");
+        const cardWidth = 970;
+        const cardHeight = 430;
+        const exportScale = 1885 / cardWidth;
+        canvas.width = 1885;
+        canvas.height = Math.round(cardHeight * exportScale);
+        const ctx = canvas.getContext("2d");
+        ctx.scale(exportScale, exportScale);
+        const font = "-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif";
+        const iconSrc = "${iconUri}";
+
+        function roundedRect(x, y, width, height, radius) {
+          ctx.beginPath();
+          ctx.roundRect(x, y, width, height, radius);
+        }
+
+        function fitText(text, maxWidth, fontValue) {
+          const value = String(text || "");
+          ctx.font = fontValue;
+          if (ctx.measureText(value).width <= maxWidth) return value;
+          let next = value;
+          while (next.length > 1 && ctx.measureText(next + "...").width > maxWidth) {
+            next = next.slice(0, -1);
+          }
+          return next + "...";
+        }
+
+        function formatDateLabel(date) {
+          const parts = String(date).split("-");
+          return parts.length === 3 ? parts[1] + "/" + parts[2] : String(date);
+        }
+
+        function heatColor(point, maxCount) {
+          if (!point || point.count <= 0) return "#ffffff";
+          const ratio = maxCount > 0 ? point.count / maxCount : 0;
+          if (ratio > 0.75) return "#3360ff";
+          if (ratio > 0.5) return "#ff6bb3";
+          if (ratio > 0.25) return "#ffd63d";
+          return "#a8e84a";
+        }
+
+        function drawStat(value, label, x, y, width) {
+          ctx.fillStyle = "#111111";
+          ctx.font = "700 25px " + font;
+          ctx.textAlign = "center";
+          ctx.fillText(fitText(value, width - 8, "700 25px " + font), x + width / 2, y);
+          ctx.fillStyle = "#555555";
+          ctx.font = "600 15px " + font;
+          ctx.fillText(label, x + width / 2, y + 26);
+        }
+
+        function loadImage(src) {
+          return new Promise((resolve) => {
+            const image = new Image();
+            image.onload = () => resolve(image);
+            image.onerror = () => resolve(undefined);
+            image.src = src;
+          });
+        }
+
+        const iconImage = await loadImage(iconSrc);
+        const sortedHeatmap = [...data.heatmap].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+        const visibleHeatmap = sortedHeatmap.filter((point) => String(point.date) <= localIsoDate(new Date()));
+        const activePoints = visibleHeatmap.filter((point) => point.count > 0);
+        const contentX = 48;
+        const graphX = contentX;
+        const graphY = 132;
+        const cell = 20;
+        const gap = 6;
+        const rows = 7;
+        const columns = 34;
+        const graphWidth = columns * cell + (columns - 1) * gap;
+        const graphRight = graphX + graphWidth;
+        const recentPoints = visibleHeatmap.slice(-(columns * rows));
+        const maxCount = Math.max(1, ...recentPoints.map((point) => point.count || 0));
+
+        ctx.fillStyle = "#111111";
+        roundedRect(0, 0, cardWidth, cardHeight, 28);
+        ctx.fill();
+
+        ctx.fillStyle = "#faf3e3";
+        roundedRect(8, 8, cardWidth - 16, cardHeight - 16, 24);
+        ctx.fill();
+
+        const avatarGradient = ctx.createLinearGradient(54, 38, 104, 88);
+        avatarGradient.addColorStop(0, "#ffb1d8");
+        avatarGradient.addColorStop(1, "#ff6bb3");
+        ctx.fillStyle = avatarGradient;
+        ctx.beginPath();
+        ctx.arc(70, 67, 28, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "#111111";
+        ctx.lineWidth = 3;
+        ctx.stroke();
+        ctx.fillStyle = "#111111";
+        ctx.font = "700 18px " + font;
+        ctx.textAlign = "center";
+        ctx.fillText(fitText(data.initials, 34, "700 18px " + font), 70, 74);
+
+        ctx.textAlign = "left";
+        ctx.fillStyle = "#111111";
+        ctx.font = "700 26px " + font;
+        ctx.fillText(fitText(data.displayName, 480, "700 26px " + font), 124, 62);
+        ctx.fillStyle = "#555555";
+        ctx.font = "600 17px " + font;
+        const accountText = fitText(data.accountDetail, 320, "600 17px " + font);
+        ctx.fillText(accountText, 124, 86);
+
+        const badgeX = 124 + Math.min(320, ctx.measureText(accountText).width) + 14;
+        const badgeWidth = Math.max(58, Math.min(130, ctx.measureText(data.planLabel).width + 24));
+        ctx.fillStyle = "#a8e84a";
+        ctx.strokeStyle = "#111111";
+        ctx.lineWidth = 2.5;
+        roundedRect(badgeX, 68, badgeWidth, 24, 8);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = "#111111";
+        ctx.font = "700 13px " + font;
+        ctx.textAlign = "center";
+        ctx.fillText(fitText(data.planLabel, badgeWidth - 18, "700 13px " + font), badgeX + badgeWidth / 2, 84);
+
+        const brandLabel = "Kiro Profile";
+        ctx.font = "800 23px " + font;
+        const brandLabelWidth = ctx.measureText(brandLabel).width;
+        const brandIconRadius = 28;
+        const brandIconCenterX = graphRight - brandLabelWidth - 16 - brandIconRadius;
+        const brandIconCenterY = 64;
+        const brandTextRight = graphRight;
+
+        ctx.textAlign = "right";
+        ctx.fillStyle = "#111111";
+        ctx.font = "800 23px " + font;
+        ctx.fillText(brandLabel, brandTextRight, 73);
+        if (iconImage) {
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(brandIconCenterX, brandIconCenterY, brandIconRadius, 0, Math.PI * 2);
+          ctx.clip();
+          ctx.drawImage(iconImage, brandIconCenterX - brandIconRadius, brandIconCenterY - brandIconRadius, brandIconRadius * 2, brandIconRadius * 2);
+          ctx.restore();
+          ctx.strokeStyle = "#111111";
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.arc(brandIconCenterX, brandIconCenterY, brandIconRadius, 0, Math.PI * 2);
+          ctx.stroke();
+        } else {
+          ctx.strokeStyle = "#111111";
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.arc(brandIconCenterX, brandIconCenterY, brandIconRadius - 5, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+
+        const graphPoints = recentPoints.slice(-columns * rows);
+        for (let col = 0; col < columns; col += 1) {
+          for (let row = 0; row < rows; row += 1) {
+            const point = graphPoints[col * rows + row];
+            const x = graphX + col * (cell + gap);
+            const y = graphY + row * (cell + gap);
+            ctx.fillStyle = heatColor(point, maxCount);
+            ctx.strokeStyle = "#111111";
+            ctx.lineWidth = 2;
+            roundedRect(x, y, cell, cell, 5);
+            ctx.fill();
+            ctx.stroke();
+          }
+        }
+
+        ctx.fillStyle = "#555555";
+        ctx.font = "700 15px " + font;
+        ctx.textAlign = "left";
+        ctx.fillText("Daily activity", graphX, graphY - 18);
+        ctx.textAlign = "right";
+        ctx.fillText(activePoints.length + " active days", graphRight, graphY - 18);
+
+        const stats = [
+          { label: "est. tokens", value: data.totalTokens },
+          { label: "active days", value: data.activeDays },
+          { label: "current streak", value: data.currentStreak },
+          { label: "longest streak", value: data.longestStreak }
+        ];
+        stats.forEach((stat, index) => {
+          const width = graphWidth / stats.length;
+          const x = graphX + index * width;
+          drawStat(stat.value, stat.label, x, 386, width);
+          if (index > 0) {
+            ctx.strokeStyle = "#111111";
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(x, 362);
+            ctx.lineTo(x, 418);
+            ctx.stroke();
+          }
+        });
+
+        const dataUrl = canvas.toDataURL("image/png");
+        let copied = false;
+        let copiedText = false;
+
+        try {
+          const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+          if (blob && navigator.clipboard && window.ClipboardItem) {
+            await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+            copied = true;
+          }
+        } catch {
+          copied = false;
+        }
+
+        if (!copied && navigator.clipboard) {
+          try {
+            await navigator.clipboard.writeText([
+              data.displayName + " - Kiro Profile",
+              data.accountDetail + " - " + data.planLabel,
+              data.totalTokens + " est. tokens",
+              data.activeDays + " active days",
+              data.currentStreak + " current streak",
+              data.longestStreak + " longest streak"
+            ].join("\\n"));
+            copiedText = true;
+          } catch {
+            copiedText = false;
+          }
+        }
+
+        vscode.postMessage({
+          type: "share-card",
+          payload: {
+            fileName: "kiro-profile-" + Date.now() + ".png",
+            dataUrl,
+            copiedToClipboard: copied,
+            copiedTextFallback: copiedText
+          }
+        });
+        return;
+      }
       const canvas = document.createElement("canvas");
       canvas.width = 1400;
       canvas.height = 800;

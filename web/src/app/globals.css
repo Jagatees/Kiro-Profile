@@ -145,11 +145,13 @@ ol {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  flex: 1 1 auto;
   gap: 10px;
   color: var(--muted);
   font-size: 18px;
   line-height: 1.1;
   font-weight: 900;
+  min-width: 0;
 }
 
 .local-badge {

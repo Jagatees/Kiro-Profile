@@ -15,17 +15,17 @@ const body = Space_Grotesk({
 });
 
 export const metadata: Metadata = {
-  title: "Kiro Profile Leaderboard",
+  title: "Kiro Stat Global Leaderboard Ranking",
   description: "A public hall of fame for Kiro builders, ranked by opted-in local stats and activity.",
   metadataBase: new URL("https://kiro-profile-leaderboard-brown.vercel.app"),
   alternates: {
     canonical: "/"
   },
   openGraph: {
-    title: "Kiro Profile Leaderboard",
+    title: "Kiro Stat Global Leaderboard Ranking",
     description: "A public hall of fame for Kiro builders, ranked by opted-in local stats and activity.",
     url: "/",
-    siteName: "Kiro Profile Leaderboard",
+    siteName: "Kiro Stat Global Leaderboard Ranking",
     images: [
       {
         url: "/kiro-leaderboard-og.png",
@@ -38,7 +38,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "Kiro Profile Leaderboard",
+    title: "Kiro Stat Global Leaderboard Ranking",
     description: "A public hall of fame for Kiro builders, ranked by opted-in local stats and activity.",
     images: ["/kiro-leaderboard-og.png"]
   },

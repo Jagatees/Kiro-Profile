@@ -89,7 +89,7 @@ export default function Home() {
         <div className="profile-line">
           <span className="brand-mark">K</span>
           <div className="profile-meta">
-            <p className="name">Kiro Profile</p>
+            <p className="name">Kiro Stat Global Leaderboard Ranking</p>
             <p className="handle">
               @token-board <span className="local-badge">LOCAL</span>
             </p>
