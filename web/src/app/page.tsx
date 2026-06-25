@@ -137,8 +137,10 @@ export default function Home() {
 
           <article className="home-panel video-panel">
             <div className="video-frame">
-              <span>Install Demo Video</span>
-              <p>Add your walkthrough video here.</p>
+              <video className="install-video" controls preload="metadata" playsInline>
+                <source src="/kiro-stat-install-demo.mp4" type="video/mp4" />
+                Your browser does not support embedded videos.
+              </video>
             </div>
           </article>
 
