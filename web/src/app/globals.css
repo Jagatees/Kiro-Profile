@@ -51,7 +51,7 @@ ol {
 }
 
 .shell {
-  width: min(980px, calc(100vw - 32px));
+  width: min(1180px, calc(100vw - 32px));
   margin: 0 auto;
   padding: 44px 0 64px;
 }
@@ -205,8 +205,8 @@ ol {
 
 .home-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
-  gap: 24px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: clamp(20px, 3vw, 34px);
   margin-top: 42px;
 }
 
@@ -219,7 +219,12 @@ ol {
 }
 
 .intro-panel {
+  grid-column: 1 / -1;
   background: #fff8d7;
+}
+
+.intro-panel p {
+  max-width: 920px;
 }
 
 .home-panel h1,
@@ -262,27 +267,30 @@ ol {
 }
 
 .video-panel {
+  grid-column: 1 / -1;
   background: var(--pink);
 }
 
 .video-frame {
   display: grid;
-  min-height: 320px;
+  min-height: 0;
   place-items: center;
   border: 4px dashed var(--ink);
   border-radius: 18px;
   background: var(--surface);
-  padding: 24px;
+  padding: clamp(12px, 2.2vw, 24px);
   text-align: center;
 }
 
 .install-video {
   display: block;
   width: 100%;
-  max-height: 520px;
+  aspect-ratio: 16 / 9;
+  max-height: none;
   border: 4px solid var(--ink);
   border-radius: 14px;
   background: #000000;
+  object-fit: contain;
 }
 
 .video-frame span {
@@ -566,7 +574,8 @@ ol {
   }
 
   .video-frame {
-    min-height: 240px;
+    min-height: 0;
+    padding: 10px;
   }
 
   .summary-strip {
