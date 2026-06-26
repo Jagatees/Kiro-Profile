@@ -1974,6 +1974,8 @@ export function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri
       display: flex;
       align-items: center;
       gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
     }
 
     .action,
@@ -2007,6 +2009,13 @@ export function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri
     .action svg {
       width: 14px;
       height: 14px;
+      flex: 0 0 auto;
+    }
+
+    .leaderboard-button,
+    .share-button {
+      min-height: 36px;
+      white-space: nowrap;
     }
 
     .sync-button {
@@ -2440,6 +2449,10 @@ export function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri
         align-items: flex-start;
       }
 
+      .sync-row {
+        justify-content: flex-start;
+      }
+
       .metric-grid,
       .bottom-grid {
         grid-template-columns: 1fr;
@@ -2485,8 +2498,8 @@ export function getProfileHtml(webview: vscode.Webview, extensionUri: vscode.Uri
       <div class="header-actions">
         <div class="sync-row">
           <button class="public-toggle ${data.leaderboardPublic ? "is-public" : ""}" title="Toggle public leaderboard profile" id="public-toggle" aria-pressed="${data.leaderboardPublic ? "true" : "false"}"><span id="public-toggle-icon">${data.leaderboardPublic ? globeIcon() : shieldLockIcon()}</span>${data.leaderboardPublic ? "Public" : "Private"}</button>
-          <button class="action leaderboard-button" title="Open leaderboard" id="leaderboard">${trophyIcon()}</button>
-          <button class="action share-button" title="Save share card" id="share">${shareIcon()}</button>
+          <button class="action leaderboard-button" title="Open leaderboard" id="leaderboard">${trophyIcon()}<span>Leaderboard</span></button>
+          <button class="action share-button" title="Copy card to clipboard" id="share">${shareIcon()}<span>Copy card to clipboard</span></button>
           <button class="action sync-button" title="Refresh insights" id="refresh">${refreshIcon()}<span>Sync now</span></button>
         </div>
         <div class="sync-subtext"><span id="refresh-status">Last synced just now</span><span class="status-dot"></span></div>
