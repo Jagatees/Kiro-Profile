@@ -2,7 +2,7 @@
   "name": "kiro-stat",
   "displayName": "Kiro Stat",
   "description": "Local Kiro stats for tokens, sessions, models, activity, and optional public leaderboard sharing.",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "publisher": "jagatees",
   "license": "MIT",
   "homepage": "https://github.com/jagatees/kiro-profile#readme",
